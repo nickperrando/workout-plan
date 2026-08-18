@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Iron Log</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Iron Log">
+<meta name="theme-color" content="#15171B">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2315171B'/%3E%3Crect x='14' y='44' width='72' height='12' rx='3' fill='%23C9A15A'/%3E%3Crect x='8' y='34' width='10' height='32' rx='2' fill='%23C9A15A'/%3E%3Crect x='82' y='34' width='10' height='32' rx='2' fill='%23C9A15A'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#15171B;
+    --surface:#1E2126;
+    --surface-2:#262A31;
+    --surface-3:#2E333B;
+    --line:#33383F;
+    --text:#EDEEF0;
+    --text-dim:#9AA0AA;
+    --text-faint:#666C76;
+    --accent:#C9A15A;
+    --accent-dim:#8A733F;
+    --accent-2:#5B85A6;
+    --good:#6E8B74;
+    --warn:#B7794B;
+    --font-display:'Futura','Trebuchet MS',system-ui,sans-serif;
+    --font-body:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;
+    --font-mono:'SF Mono',ui-monospace,'Menlo',monospace;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body);
+    overscroll-behavior-y:none; -webkit-user-select:none; user-select:none;
+  }
+  input, textarea{ -webkit-user-select:text; user-select:text; }
+  #app{
+    max-width:560px; margin:0 auto; min-height:100vh;
+    display:flex; flex-direction:column;
+    padding-bottom:calc(64px + env(safe-area-inset-bottom));
+  }
+  header.top{
+    padding:calc(18px + env(safe-area-inset-top)) 20px 14px;
+    background:linear-gradient(180deg,var(--surface) 0%, var(--bg) 100%);
+    border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:5;
+  }
+  header.top h1{
+    font-family:var(--font-display); font-weight:700; letter-spacing:2.5px;
+    text-transform:uppercase; font-size:20px; margin:0; color:var(--text);
+  }
+  header.top h1 span{ color:var(--accent); }
+  header.top .sub{ color:var(--text-dim); font-size:12.5px; margin-top:3px; font-family:var(--font-mono); letter-spacing:.3px; }
+
+  main{ flex:1; padding:16px 16px 24px; }
+  .view{ display:none; animation:fade .18s ease; }
+  .view.active{ display:block; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  .section-label{
+    font-family:var(--font-display); text-transform:uppercase; letter-spacing:2px;
+    font-size:12px; color:var(--text-faint); margin:22px 2px 10px; font-weight:700;
+  }
+  .section-label:first-child{ margin-top:2px; }
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:14px 16px; margin-bottom:10px;
+  }
+  .card.pressable:active{ background:var(--surface-2); }
+
+  .prog-grid{ display:flex; flex-direction:column; gap:10px; }
+  .prog-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:16px; display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .prog-card .name{ font-weight:600; font-size:16px; }
+  .prog-card .meta{ color:var(--text-dim); font-size:12.5px; margin-top:2px; }
+  .variant-row{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .chip{
+    background:var(--surface-2); border:1px solid var(--line); color:var(--text-dim);
+    padding:8px 14px; border-radius:999px; font-size:13px; font-weight:600; cursor:pointer;
+    font-family:var(--font-body);
+  }
+  .chip.active{ background:var(--accent); border-color:var(--accent); color:#1A1C20; }
+  .chip:active{ opacity:.8; }
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--accent); color:#1A1C20; border:none; border-radius:12px;
+    padding:14px 18px; font-weight:700; font-size:15px; width:100%; cursor:pointer;
+    font-family:var(--font-body); letter-spacing:.2px;
+  }
+  .btn:active{ background:var(--accent-dim); }
+  .btn.ghost{
+    background:transparent; border:1px solid var(--line); color:var(--text);
+  }
+  .btn.ghost:active{ background:var(--surface-2); }
+  .btn.small{ padding:9px 14px; font-size:13px; width:auto; }
+  .btn.danger{ background:transparent; border:1px solid #6E3D34; color:#C97A64; }
+
+  .ex-row{
+    display:flex; gap:12px; align-items:flex-start; padding:14px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .ex-row:last-child{ border-bottom:none; }
+  .ex-icon-wrap{
+    width:44px; height:44px; border-radius:10px; background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--accent);
+  }
+  .ex-icon-wrap svg{ width:28px; height:28px; }
+  .ex-info{ flex:1; min-width:0; }
+  .ex-name{ font-weight:600; font-size:15px; }
+  .ex-prescribed{ color:var(--text-dim); font-size:12.5px; margin-top:2px; font-family:var(--font-mono); }
+  .set-dots{ display:flex; gap:6px; margin-top:10px; }
+  .set-dot{
+    width:26px; height:26px; border-radius:8px; border:1.5px solid var(--line);
+    display:flex; align-items:center; justify-content:center; font-size:11px;
+    font-family:var(--font-mono); color:var(--text-faint); cursor:pointer;
+  }
+  .set-dot.done{ background:var(--accent); border-color:var(--accent); color:#1A1C20; font-weight:700; }
+
+  .field-row{ display:flex; gap:8px; margin-top:8px; }
+  .field{ flex:1; }
+  .field label{ display:block; font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+  .field input, .field select{
+    width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:9px 10px; font-size:14px; font-family:var(--font-mono);
+  }
+  .field input:focus, .field select:focus{ outline:1.5px solid var(--accent); }
+
+  nav.tabbar{
+    position:fixed; bottom:0; left:0; right:0; z-index:10;
+    background:rgba(21,23,27,.94); backdrop-filter:blur(14px);
+    border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  nav.tabbar .row{
+    max-width:560px; margin:0 auto; display:flex;
+  }
+  nav.tabbar button{
+    flex:1; background:none; border:none; color:var(--text-faint);
+    padding:10px 4px 8px; font-family:var(--font-body); font-size:10.5px;
+    display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;
+    letter-spacing:.3px;
+  }
+  nav.tabbar button svg{ width:22px; height:22px; }
+  nav.tabbar button.active{ color:var(--accent); }
+
+  .empty{
+    text-align:center; padding:40px 20px; color:var(--text-faint);
+  }
+  .empty svg{ width:40px; height:40px; margin-bottom:10px; opacity:.5; }
+  .empty p{ font-size:13.5px; line-height:1.5; }
+
+  .hist-item{ padding:13px 0; border-bottom:1px solid var(--line); }
+  .hist-item:last-child{ border-bottom:none; }
+  .hist-top{ display:flex; justify-content:space-between; align-items:baseline; }
+  .hist-date{ font-weight:600; font-size:14.5px; }
+  .hist-prog{ color:var(--accent); font-size:12px; font-family:var(--font-mono); }
+  .hist-detail{ margin-top:8px; font-size:12.5px; color:var(--text-dim); line-height:1.6; display:none; }
+  .hist-item.open .hist-detail{ display:block; }
+
+  .lib-cat{ margin-bottom:4px; }
+  .search-bar{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:12px;
+    padding:11px 14px; width:100%; color:var(--text); font-size:14.5px; font-family:var(--font-body);
+    margin-bottom:14px;
+  }
+  .filter-row{ display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; margin-bottom:6px; }
+  .filter-row::-webkit-scrollbar{ display:none; }
+
+  .lib-row{
+    display:flex; gap:12px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line); cursor:pointer;
+  }
+  .lib-row:last-child{ border-bottom:none; }
+  .lib-name{ font-weight:600; font-size:14.5px; }
+  .lib-muscles{ color:var(--text-dim); font-size:12px; margin-top:1px; }
+  .lib-detail{
+    display:none; padding:0 0 14px 56px; margin-top:-6px; color:var(--text-dim); font-size:13px; line-height:1.6;
+  }
+  .lib-row-wrap.open .lib-detail{ display:block; }
+  .lib-row-wrap.open .ex-icon-wrap{ color:var(--accent-2); }
+
+  .manage-list .ex-row{ align-items:center; }
+  .icon-x{ color:var(--text-faint); }
+
+  .sparkline-wrap{ margin-top:6px; }
+
+  textarea.jsonbox{
+    width:100%; height:110px; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--text); border-radius:8px; padding:10px; font-family:var(--font-mono); font-size:11.5px;
+  }
+  .toast{
+    position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
+    background:var(--surface-3); border:1px solid var(--line); color:var(--text);
+    padding:10px 18px; border-radius:999px; font-size:13px; z-index:50; opacity:0;
+    transition:opacity .2s, transform .2s; pointer-events:none;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-6px); }
+
+  select.plain{
+    background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:8px 10px; font-family:var(--font-body); font-size:13px;
+  }
+  .modal-bg{
+    position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:30; display:none;
+    align-items:flex-end; justify-content:center;
+  }
+  .modal-bg.show{ display:flex; }
+  .modal{
+    background:var(--surface); border-radius:18px 18px 0 0; padding:20px 18px calc(24px + env(safe-area-inset-bottom));
+    width:100%; max-width:560px; max-height:82vh; overflow-y:auto;
+  }
+  .modal h3{ font-family:var(--font-display); text-transform:uppercase; letter-spacing:1.5px; font-size:15px; margin:0 0 14px; }
+  .modal .close-x{ float:right; color:var(--text-faint); font-size:20px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<svg style="display:none">
+<defs>
+<!-- pictogram icon set: minimal stroke figures -->
+<g id="ic-press_horizontal"><line x1="10" y1="42" x2="38" y2="42" stroke="currentColor" stroke-width="3"/><circle cx="24" cy="18" r="5" fill="currentColor"/><line x1="24" y1="23" x2="24" y2="38" stroke="currentColor" stroke-width="3"/><line x1="12" y1="17" x2="36" y2="17" stroke="currentColor" stroke-width="3.5"/><circle cx="10" cy="17" r="4" fill="currentColor"/><circle cx="38" cy="17" r="4" fill="currentColor"/><line x1="24" y1="27" x2="14" y2="17" stroke="currentColor" stroke-width="3"/><line x1="24" y1="27" x2="34" y2="17" stroke="currentColor" stroke-width="3"/></g>
+<g id="ic-press_incline"><line x1="8" y1="40" x2="30" y2="28" stroke="currentColor" stroke-width="3"/><circle cx="26" cy="22" r="5" fill="currentColor"/><line x1="12" y1="10" x2="36" y2="10" stroke="currentColor" stroke-width="3.5"/><circle cx="10" cy="10" r="4" fill="currentColor"/><circle cx="38" cy="10" r="4" fill="currentColor"/><line x1="26" y1="27" x2="14" y2="10" stroke="currentColor" stroke-width="3"/><line x1="26" y1="27" x2="34" y2="10" stroke="currentColor" stroke-width="3"/></g>
+<g id="ic-press_vertical"><circle cx="24" cy="10" r="5" fill="currentColor"/><line x1="24" y1="15" x2="24" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="21" x2="16" y2="30" stroke="currentColor" stroke-width="3"/><line x1="24" y1="21" x2="32" y2="30" stroke="currentColor" stroke-width="3"/><line x1="12" y1="4" x2="36" y2="4" stroke="currentColor" stroke-width="3.5"/><circle cx="10" cy="4" r="4" fill="currentColor"/><circle cx="38" cy="4" r="4" fill="currentColor"/><line x1="24" y1="21" x2="14" y2="4" stroke="currentColor" stroke-width="3"/><line x1="24" y1="21" x2="34" y2="4" stroke="currentColor" stroke-width="3"/></g>
+<g id="ic-row_horizontal"><line x1="8" y1="10" x2="8" y2="34" stroke="currentColor" stroke-width="3"/><circle cx="30" cy="14" r="5" fill="currentColor"/><line x1="12" y1="30" x2="30" y2="19" stroke="currentColor" stroke-width="3"/><line x1="30" y1="19" x2="16" y2="24" stroke="currentColor" stroke-width="3"/><circle cx="14" cy="24" r="3.5" fill="currentColor"/></g>
+<g id="ic-pulldown"><line x1="10" y1="6" x2="38" y2="6" stroke="currentColor" stroke-width="3.5"/><circle cx="24" cy="14" r="5" fill="currentColor"/><line x1="24" y1="19" x2="24" y2="38" stroke="currentColor" stroke-width="3"/><line x1="16" y1="42" x2="24" y2="30" stroke="currentColor" stroke-width="3"/><line x1="32" y1="42" x2="24" y2="30" stroke="currentColor" stroke-width="3"/><line x1="24" y1="22" x2="16" y2="10" stroke="currentColor" stroke-width="3"/><line x1="24" y1="22" x2="32" y2="10" stroke="currentColor" stroke-width="3"/></g>
+<g id="ic-pullup"><line x1="6" y1="6" x2="42" y2="6" stroke="currentColor" stroke-width="3.5"/><circle cx="24" cy="16" r="5" fill="currentColor"/><line x1="24" y1="21" x2="24" y2="38" stroke="currentColor" stroke-width="3"/><line x1="18" y1="42" x2="24" y2="34" stroke="currentColor" stroke-width="3"/><line x1="30" y1="42" x2="24" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="21" x2="15" y2="7" stroke="currentColor" stroke-width="3"/><line x1="24" y1="21" x2="33" y2="7" stroke="currentColor" stroke-width="3"/></g>
+<g id="ic-hinge"><circle cx="14" cy="12" r="5" fill="currentColor"/><line x1="14" y1="17" x2="30" y2="26" stroke="currentColor" stroke-width="3"/><line x1="30" y1="26" x2="30" y2="40" stroke="currentColor" stroke-width="3"/><line x1="14" y1="17" x2="6" y2="24" stroke="currentColor" stroke-width="3"/><line x1="6" y1="24" x2="6" y2="36" stroke="currentColor" stroke-width="3.5"/><circle cx="6" cy="36" r="4" fill="currentColor"/><circle cx="6" cy="24" r="4" fill="currentColor"/></g>
+<g id="ic-squat"><circle cx="24" cy="8" r="5" fill="currentColor"/><line x1="24" y1="13" x2="24" y2="26" stroke="currentColor" stroke-width="3"/><line x1="24" y1="26" x2="16" y2="34" stroke="currentColor" stroke-width="3"/><line x1="16" y1="34" x2="16" y2="42" stroke="currentColor" stroke-width="3"/><line x1="24" y1="26" x2="32" y2="34" stroke="currentColor" stroke-width="3"/><line x1="32" y1="34" x2="32" y2="42" stroke="currentColor" stroke-width="3"/><line x1="12" y1="14" x2="36" y2="14" stroke="currentColor" stroke-width="3.5"/><circle cx="10" cy="14" r="4" fill="currentColor"/><circle cx="38" cy="14" r="4" fill="currentColor"/></g>
+<g id="ic-lunge"><circle cx="20" cy="8" r="5" fill="currentColor"/><line x1="20" y1="13" x2="22" y2="26" stroke="currentColor" stroke-width="3"/><line x1="22" y1="26" x2="12" y2="30" stroke="currentColor" stroke-width="3"/><line x1="12" y1="30" x2="8" y2="42" stroke="currentColor" stroke-width="3"/><line x1="22" y1="26" x2="34" y2="34" stroke="currentColor" stroke-width="3"/><line x1="34" y1="34" x2="34" y2="42" stroke="currentColor" stroke-width="3"/><line x1="20" y1="18" x2="12" y2="14" stroke="currentColor" stroke-width="3"/><circle cx="10" cy="13" r="3.5" fill="currentColor"/><line x1="20" y1="18" x2="28" y2="14" stroke="currentColor" stroke-width="3"/><circle cx="30" cy="13" r="3.5" fill="currentColor"/></g>
+<g id="ic-curl"><circle cx="16" cy="10" r="5" fill="currentColor"/><line x1="16" y1="15" x2="16" y2="34" stroke="currentColor" stroke-width="3"/><line x1="16" y1="42" x2="12" y2="34" stroke="currentColor" stroke-width="3"/><line x1="16" y1="42" x2="20" y2="34" stroke="currentColor" stroke-width="3"/><line x1="16" y1="20" x2="30" y2="24" stroke="currentColor" stroke-width="3"/><line x1="30" y1="24" x2="34" y2="14" stroke="currentColor" stroke-width="3"/><circle cx="36" cy="10" r="4" fill="currentColor"/></g>
+<g id="ic-triceps_extension"><circle cx="24" cy="8" r="5" fill="currentColor"/><line x1="24" y1="13" x2="24" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="42" x2="19" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="42" x2="29" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="18" x2="36" y2="10" stroke="currentColor" stroke-width="3"/><line x1="36" y1="10" x2="36" y2="26" stroke="currentColor" stroke-width="3"/><circle cx="36" cy="28" r="3.5" fill="currentColor"/></g>
+<g id="ic-raise_lateral"><circle cx="24" cy="8" r="5" fill="currentColor"/><line x1="24" y1="13" x2="24" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="42" x2="19" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="42" x2="29" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="18" x2="8" y2="16" stroke="currentColor" stroke-width="3"/><circle cx="6" cy="16" r="3.5" fill="currentColor"/><line x1="24" y1="18" x2="40" y2="16" stroke="currentColor" stroke-width="3"/><circle cx="42" cy="16" r="3.5" fill="currentColor"/></g>
+<g id="ic-fly"><circle cx="24" cy="10" r="5" fill="currentColor"/><line x1="24" y1="15" x2="24" y2="32" stroke="currentColor" stroke-width="3"/><line x1="16" y1="42" x2="24" y2="32" stroke="currentColor" stroke-width="3"/><line x1="32" y1="42" x2="24" y2="32" stroke="currentColor" stroke-width="3"/><path d="M24 20 Q12 20 8 30" stroke="currentColor" stroke-width="3" fill="none"/><circle cx="7" cy="31" r="3.5" fill="currentColor"/><path d="M24 20 Q36 20 40 30" stroke="currentColor" stroke-width="3" fill="none"/><circle cx="41" cy="31" r="3.5" fill="currentColor"/></g>
+<g id="ic-shrug"><circle cx="24" cy="9" r="5" fill="currentColor"/><line x1="15" y1="18" x2="33" y2="18" stroke="currentColor" stroke-width="3"/><line x1="24" y1="17" x2="24" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="42" x2="19" y2="34" stroke="currentColor" stroke-width="3"/><line x1="24" y1="42" x2="29" y2="34" stroke="currentColor" stroke-width="3"/><line x1="15" y1="24" x2="15" y2="34" stroke="currentColor" stroke-width="3.5"/><circle cx="15" cy="36" r="4" fill="currentColor"/><line x1="33" y1="24" x2="33" y2="34" stroke="currentColor" stroke-width="3.5"/><circle cx="33" cy="36" r="4" fill="currentColor"/></g>
+<g id="ic-calf"><circle cx="24" cy="6" r="5" fill="currentColor"/><line x1="24" y1="11" x2="24" y2="30" stroke="currentColor" stroke-width="3"/><line x1="24" y1="30" x2="18" y2="40" stroke="currentColor" stroke-width="3"/><line x1="18" y1="40" x2="24" y2="42" stroke="currentColor" stroke-width="3"/><path d="M30 26 L38 18 M38 18 L34 18 M38 18 L38 22" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g id="ic-core"><circle cx="12" cy="30" r="5" fill="currentColor"/><line x1="12" y1="35" x2="30" y2="35" stroke="currentColor" stroke-width="3"/><path d="M12 25 Q20 10 34 14" stroke="currentColor" stroke-width="3" fill="none"/><line x1="30" y1="35" x2="38" y2="24" stroke="currentColor" stroke-width="3"/><line x1="30" y1="35" x2="38" y2="42" stroke="currentColor" stroke-width="3"/></g>
+<g id="ic-adduction"><circle cx="24" cy="8" r="5" fill="currentColor"/><line x1="24" y1="13" x2="24" y2="28" stroke="currentColor" stroke-width="3"/><line x1="24" y1="28" x2="14" y2="24" stroke="currentColor" stroke-width="3"/><line x1="14" y1="24" x2="14" y2="42" stroke="currentColor" stroke-width="3"/><line x1="24" y1="28" x2="34" y2="24" stroke="currentColor" stroke-width="3"/><line x1="34" y1="24" x2="34" y2="42" stroke="currentColor" stroke-width="3"/><path d="M12 30 L18 30 M34 30 L28 30" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></g>
+<g id="ic-leg_extension"><circle cx="14" cy="8" r="5" fill="currentColor"/><line x1="14" y1="13" x2="16" y2="26" stroke="currentColor" stroke-width="3"/><line x1="16" y1="26" x2="16" y2="36" stroke="currentColor" stroke-width="3"/><path d="M16 36 L34 30" stroke="currentColor" stroke-width="3" fill="none"/><path d="M28 26 L34 30 L30 34" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="18" x2="6" y2="24" stroke="currentColor" stroke-width="3"/></g>
+<g id="ic-bodyweight"><circle cx="24" cy="8" r="5" fill="currentColor"/><line x1="24" y1="13" x2="24" y2="30" stroke="currentColor" stroke-width="3"/><line x1="24" y1="30" x2="14" y2="42" stroke="currentColor" stroke-width="3"/><line x1="24" y1="30" x2="34" y2="42" stroke="currentColor" stroke-width="3"/><line x1="24" y1="18" x2="12" y2="24" stroke="currentColor" stroke-width="3"/><line x1="24" y1="18" x2="36" y2="24" stroke="currentColor" stroke-width="3"/></g>
+<g id="ic-hipthrust"><circle cx="10" cy="30" r="5" fill="currentColor"/><line x1="10" y1="35" x2="26" y2="38" stroke="currentColor" stroke-width="3"/><line x1="26" y1="38" x2="26" y2="28" stroke="currentColor" stroke-width="3"/><line x1="26" y1="28" x2="38" y2="28" stroke="currentColor" stroke-width="3.5"/><circle cx="40" cy="28" r="4" fill="currentColor"/><line x1="10" y1="35" x2="4" y2="42" stroke="currentColor" stroke-width="3"/></g>
+<!-- nav icons -->
+<g id="nav-today"><path d="M6 12 L12 6 L18 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 11 L8 18 L16 18 L16 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g id="nav-history"><circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 8 L12 12 L15 14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g id="nav-library"><rect x="5" y="4" width="14" height="16" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" stroke-width="1.6"/><line x1="8" y1="11.5" x2="16" y2="11.5" stroke="currentColor" stroke-width="1.6"/><line x1="8" y1="15" x2="13" y2="15" stroke="currentColor" stroke-width="1.6"/></g>
+<g id="nav-manage"><path d="M12 4 L12 20 M4 12 L20 12" stroke="currentColor" stroke-width="0" /><circle cx="12" cy="12" r="2.4" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 5v2.2M12 16.8V19M5 12h2.2M16.8 12H19M7.2 7.2l1.5 1.5M15.3 15.3l1.5 1.5M7.2 16.8l1.5-1.5M15.3 8.7l1.5-1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></g>
+</defs>
+</svg>
+
+<div id="app">
+  <header class="top">
+    <h1>IRON <span>LOG</span></h1>
+    <div class="sub" id="header-sub">Loading…</div>
+  </header>
+
+  <main>
+    <section id="view-today" class="view active"></section>
+    <section id="view-history" class="view"></section>
+    <section id="view-library" class="view"></section>
+    <section id="view-manage" class="view"></section>
+  </main>
+</div>
+
+<nav class="tabbar">
+  <div class="row">
+    <button data-tab="today" class="active"><svg><use href="#nav-today"/></svg>Today</button>
+    <button data-tab="history"><svg><use href="#nav-history"/></svg>History</button>
+    <button data-tab="library"><svg><use href="#nav-library"/></svg>Library</button>
+    <button data-tab="manage"><svg><use href="#nav-manage"/></svg>Manage</button>
+  </div>
+</nav>
+
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modal-bg"><div class="modal" id="modal-body"></div></div>
+
+<script>
+/* ============================= DATA ============================= */
+
+const DEFAULT_PROGRAMS = {
+  chest_tri: { label:"Chest & Triceps", order:1, variants:{
+    main: { label:"Main", exercises:[
+      {name:"Bench Press", equip:"barbell", pattern:"press_horizontal", sets:3, reps:6, weight:165},
+      {name:"Incline Bench Press", equip:"barbell", pattern:"press_incline", sets:3, reps:6, weight:135},
+      {name:"Strict Military Press (Barbell)", equip:"barbell", pattern:"press_vertical", sets:3, reps:10, weight:55},
+      {name:"Lateral Raise (Dumbbell)", equip:"dumbbell", pattern:"raise_lateral", sets:3, reps:10, weight:20},
+      {name:"Tricep Pushdown", equip:"cable", pattern:"triceps_extension", sets:3, reps:10, weight:42.5}
+    ]},
+    alt1: { label:"Alt 1", exercises:[
+      {name:"Chest Fly", equip:"dumbbell", pattern:"fly", sets:3, reps:10, weight:32.5},
+      {name:"Incline Bench Press", equip:"barbell", pattern:"press_incline", sets:3, reps:6, weight:135},
+      {name:"Arnold Press", equip:"dumbbell", pattern:"press_vertical", sets:3, reps:10, weight:25},
+      {name:"Lateral Raise (Dumbbell)", equip:"dumbbell", pattern:"raise_lateral", sets:3, reps:10, weight:20},
+      {name:"Overhead Triceps Pull", equip:"cable", pattern:"triceps_extension", sets:3, reps:10, weight:37.5}
+    ]},
+    alt2: { label:"Alt 2", exercises:[] }
+  }},
+  back_bi: { label:"Back & Biceps", order:2, variants:{
+    main: { label:"Main", exercises:[
+      {name:"Deadlift", equip:"barbell", pattern:"hinge", sets:3, reps:6, weight:80},
+      {name:"Seated Row", equip:"cable", pattern:"row_horizontal", sets:3, reps:10, weight:57.5},
+      {name:"Lat Pulldown", equip:"cable", pattern:"pulldown", sets:3, reps:10, weight:57.5},
+      {name:"Bicep Curl", equip:"dumbbell", pattern:"curl", sets:3, reps:8, weight:30}
+    ]},
+    alt1: { label:"Alt 1", exercises:[
+      {name:"Back Extension", equip:"machine", pattern:"hinge", sets:3, reps:12, weight:45},
+      {name:"Lat Pulldown", equip:"cable", pattern:"pulldown", sets:3, reps:10, weight:57.5},
+      {name:"Barbell Shrug", equip:"barbell", pattern:"shrug", sets:3, reps:10, weight:45},
+      {name:"Bicep Curl", equip:"dumbbell", pattern:"curl", sets:3, reps:10, weight:30}
+    ]},
+    alt2: { label:"Alt 2", exercises:[] }
+  }},
+  legs: { label:"Legs", order:3, variants:{
+    main: { label:"Main", exercises:[
+      {name:"Squat", equip:"barbell", pattern:"squat", sets:3, reps:6, weight:80},
+      {name:"Leg Extension", equip:"machine", pattern:"leg_extension", sets:3, reps:10, weight:150},
+      {name:"Flat Leg Raise", equip:"bodyweight", pattern:"core", sets:3, reps:10, weight:null},
+      {name:"Hip Adductor", equip:"machine", pattern:"adduction", sets:3, reps:10, weight:250},
+      {name:"Calf Press on Seated Leg Press", equip:"machine", pattern:"calf", sets:3, reps:10, weight:340}
+    ]},
+    alt1: { label:"Alt 1", exercises:[
+      {name:"Lunges", equip:"dumbbell", pattern:"lunge", sets:3, reps:10, weight:35},
+      {name:"Hip Adductor", equip:"machine", pattern:"adduction", sets:3, reps:10, weight:250},
+      {name:"Leg Extension", equip:"machine", pattern:"leg_extension", sets:3, reps:10, weight:150},
+      {name:"Flat Leg Raise", equip:"bodyweight", pattern:"core", sets:3, reps:10, weight:null},
+      {name:"Calf Press on Seated Leg Press", equip:"machine", pattern:"calf", sets:3, reps:10, weight:340}
+    ]},
+    alt2: { label:"Alt 2", exercises:[] }
+  }}
+};
+
+const EQUIP_LABEL = { barbell:"Barbell", dumbbell:"Dumbbell", cable:"Cable", machine:"Machine", bodyweight:"Bodyweight", band:"Band" };
+
+const DEFAULT_LIBRARY = [
+ {name:"Bench Press", cat:"Chest", equip:"barbell", pattern:"press_horizontal", muscles:"Chest, front shoulders, triceps", cue:"Lower the bar to mid-chest with elbows around 45°, then drive it back up over your shoulders."},
+ {name:"Incline Bench Press", cat:"Chest", equip:"barbell", pattern:"press_incline", muscles:"Upper chest, front shoulders, triceps", cue:"Set the bench to 30-45°. Lower to the upper chest, keep wrists stacked over elbows."},
+ {name:"Decline Bench Press", cat:"Chest", equip:"barbell", pattern:"press_horizontal", muscles:"Lower chest, triceps", cue:"Lower the bar to the lower chest line, press straight up, keep shoulder blades pinned."},
+ {name:"Dumbbell Chest Press", cat:"Chest", equip:"dumbbell", pattern:"press_horizontal", muscles:"Chest, front shoulders, triceps", cue:"Press dumbbells up and slightly inward until they nearly touch above your chest."},
+ {name:"Chest Fly", cat:"Chest", equip:"dumbbell", pattern:"fly", muscles:"Chest", cue:"Arc the dumbbells out and down with a soft elbow bend, feel a stretch across the chest."},
+ {name:"Cable Crossover", cat:"Chest", equip:"cable", pattern:"fly", muscles:"Chest", cue:"Pull the handles down and together in front of your hips, squeeze at the bottom."},
+ {name:"Push-Up (Weighted)", cat:"Chest", equip:"bodyweight", pattern:"press_horizontal", muscles:"Chest, triceps, core", cue:"Add a plate on your back. Keep a straight line from head to heels through the full rep."},
+ {name:"Weighted Dip", cat:"Chest", equip:"bodyweight", pattern:"press_vertical", muscles:"Chest, triceps", cue:"Lean forward slightly to bias the chest, lower until shoulders dip below elbows."},
+
+ {name:"Deadlift", cat:"Back", equip:"barbell", pattern:"hinge", muscles:"Back, glutes, hamstrings", cue:"Hinge at the hips with a flat back, drive through the floor and stand tall, bar stays close to the shins."},
+ {name:"Romanian Deadlift", cat:"Back", equip:"barbell", pattern:"hinge", muscles:"Hamstrings, glutes, lower back", cue:"Push hips back with a slight knee bend, lower the bar along your legs, feel a hamstring stretch."},
+ {name:"Bent-Over Row", cat:"Back", equip:"barbell", pattern:"row_horizontal", muscles:"Mid back, lats, biceps", cue:"Hinge forward about 45°, pull the bar to your lower ribs, squeeze your shoulder blades together."},
+ {name:"Seated Row", cat:"Back", equip:"cable", pattern:"row_horizontal", muscles:"Mid back, lats, biceps", cue:"Sit tall, pull the handle to your torso, keep elbows close and squeeze at the finish."},
+ {name:"Lat Pulldown", cat:"Back", equip:"cable", pattern:"pulldown", muscles:"Lats, biceps", cue:"Pull the bar to your upper chest, lead with your elbows, avoid leaning back excessively."},
+ {name:"Pull-Up (Weighted)", cat:"Back", equip:"bodyweight", pattern:"pullup", muscles:"Lats, biceps", cue:"Add weight with a belt or vest. Pull your chin over the bar, lower under control to a full hang."},
+ {name:"T-Bar Row", cat:"Back", equip:"barbell", pattern:"row_horizontal", muscles:"Mid back, lats", cue:"Hinge forward, pull the handle into your torso, keep your chest up throughout."},
+ {name:"Barbell Shrug", cat:"Back", equip:"barbell", pattern:"shrug", muscles:"Traps", cue:"Lift your shoulders straight up toward your ears, pause, then lower with control."},
+ {name:"Back Extension", cat:"Back", equip:"machine", pattern:"hinge", muscles:"Lower back, glutes, hamstrings", cue:"Hinge at the hips over the pad, lower under control, rise until your body is a straight line."},
+
+ {name:"Strict Military Press", cat:"Shoulders", equip:"barbell", pattern:"press_vertical", muscles:"Shoulders, triceps", cue:"Press the bar straight overhead, tuck your chin slightly as it passes your face, lock out above the crown."},
+ {name:"Arnold Press", cat:"Shoulders", equip:"dumbbell", pattern:"press_vertical", muscles:"Shoulders, triceps", cue:"Start palms facing you, rotate outward as you press up so palms face forward at the top."},
+ {name:"Lateral Raise", cat:"Shoulders", equip:"dumbbell", pattern:"raise_lateral", muscles:"Side shoulders", cue:"Raise dumbbells out to the sides to shoulder height, lead with your elbows, control the descent."},
+ {name:"Front Raise", cat:"Shoulders", equip:"dumbbell", pattern:"raise_lateral", muscles:"Front shoulders", cue:"Raise the weight straight in front of you to shoulder height, avoid swinging your torso."},
+ {name:"Rear Delt Fly", cat:"Shoulders", equip:"dumbbell", pattern:"fly", muscles:"Rear shoulders, upper back", cue:"Hinge forward, raise dumbbells out to the sides with a slight elbow bend, squeeze the rear delts."},
+ {name:"Upright Row", cat:"Shoulders", equip:"barbell", pattern:"shrug", muscles:"Shoulders, traps", cue:"Pull the bar up along your body to chest height, leading with your elbows."},
+
+ {name:"Bicep Curl", cat:"Arms", equip:"dumbbell", pattern:"curl", muscles:"Biceps", cue:"Curl the weight up without swinging your elbows forward, squeeze at the top, lower slowly."},
+ {name:"Hammer Curl", cat:"Arms", equip:"dumbbell", pattern:"curl", muscles:"Biceps, forearms", cue:"Keep palms facing each other throughout the curl for a neutral grip."},
+ {name:"Preacher Curl", cat:"Arms", equip:"barbell", pattern:"curl", muscles:"Biceps", cue:"Rest your arms on the pad, curl up without lifting your elbows off the pad."},
+ {name:"Tricep Pushdown", cat:"Arms", equip:"cable", pattern:"triceps_extension", muscles:"Triceps", cue:"Keep elbows pinned at your sides, push the bar down until arms are fully extended."},
+ {name:"Overhead Triceps Extension", cat:"Arms", equip:"dumbbell", pattern:"triceps_extension", muscles:"Triceps", cue:"Lower the weight behind your head with elbows pointing forward, extend back up overhead."},
+ {name:"Skull Crusher", cat:"Arms", equip:"barbell", pattern:"triceps_extension", muscles:"Triceps", cue:"Lying down, lower the bar toward your forehead by bending only at the elbow."},
+ {name:"Close-Grip Bench Press", cat:"Arms", equip:"barbell", pattern:"press_horizontal", muscles:"Triceps, chest", cue:"Grip just inside shoulder width, keep elbows tucked as you press the bar up."},
+
+ {name:"Squat", cat:"Legs", equip:"barbell", pattern:"squat", muscles:"Quads, glutes, hamstrings", cue:"Bar on your upper back, sit hips down and back, keep knees tracking over your toes."},
+ {name:"Front Squat", cat:"Legs", equip:"barbell", pattern:"squat", muscles:"Quads, glutes, core", cue:"Bar rests on your front shoulders, keep your torso upright as you descend."},
+ {name:"Goblet Squat", cat:"Legs", equip:"dumbbell", pattern:"squat", muscles:"Quads, glutes", cue:"Hold a dumbbell at your chest, squat down between your knees, drive through your heels."},
+ {name:"Leg Press", cat:"Legs", equip:"machine", pattern:"squat", muscles:"Quads, glutes, hamstrings", cue:"Lower the sled until knees reach about 90°, press through your whole foot."},
+ {name:"Leg Extension", cat:"Legs", equip:"machine", pattern:"leg_extension", muscles:"Quads", cue:"Extend your knees fully against the pad, pause briefly, lower with control."},
+ {name:"Leg Curl", cat:"Legs", equip:"machine", pattern:"leg_extension", muscles:"Hamstrings", cue:"Curl the pad toward your glutes, keep your hips pressed into the bench."},
+ {name:"Lunges", cat:"Legs", equip:"dumbbell", pattern:"lunge", muscles:"Quads, glutes, hamstrings", cue:"Step forward and lower your back knee toward the floor, push back to standing through your front heel."},
+ {name:"Bulgarian Split Squat", cat:"Legs", equip:"dumbbell", pattern:"lunge", muscles:"Quads, glutes", cue:"Rear foot elevated behind you, lower straight down through your front leg."},
+ {name:"Hip Thrust", cat:"Legs", equip:"barbell", pattern:"hipthrust", muscles:"Glutes, hamstrings", cue:"Upper back on a bench, drive your hips up until your torso is level, squeeze your glutes at the top."},
+ {name:"Calf Raise", cat:"Legs", equip:"machine", pattern:"calf", muscles:"Calves", cue:"Rise up onto your toes as high as possible, pause, lower until you feel a stretch."},
+ {name:"Hip Adductor", cat:"Legs", equip:"machine", pattern:"adduction", muscles:"Inner thighs", cue:"Squeeze your knees together against the pads through a controlled range of motion."},
+ {name:"Hip Abductor", cat:"Legs", equip:"machine", pattern:"adduction", muscles:"Outer thighs, glutes", cue:"Push your knees outward against the pads, control the return."},
+
+ {name:"Weighted Sit-Up", cat:"Core", equip:"bodyweight", pattern:"core", muscles:"Abs", cue:"Hold a plate at your chest, curl your torso up off the floor, lower with control."},
+ {name:"Cable Crunch", cat:"Core", equip:"cable", pattern:"core", muscles:"Abs", cue:"Kneel below the cable, crunch your elbows toward your knees by flexing your spine, not pulling with your arms."},
+ {name:"Hanging Leg Raise", cat:"Core", equip:"bodyweight", pattern:"core", muscles:"Abs, hip flexors", cue:"Hang from a bar, raise your legs to hip height or higher without swinging."},
+ {name:"Weighted Russian Twist", cat:"Core", equip:"dumbbell", pattern:"core", muscles:"Obliques", cue:"Sit back slightly, rotate a weight from side to side while keeping your chest up."}
+];
+
+/* ============================= STATE / STORAGE ============================= */
+
+const LS_PROGRAMS = "ironlog_programs_v1";
+const LS_HISTORY = "ironlog_history_v1";
+const LS_LIBRARY = "ironlog_library_custom_v1";
+const LS_SESSION = "ironlog_active_session_v1";
+
+function loadPrograms(){
+  try{
+    const raw = localStorage.getItem(LS_PROGRAMS);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT_PROGRAMS));
+}
+function savePrograms(){ localStorage.setItem(LS_PROGRAMS, JSON.stringify(PROGRAMS)); }
+
+function loadHistory(){
+  try{
+    const raw = localStorage.getItem(LS_HISTORY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return [];
+}
+function saveHistory(){ localStorage.setItem(LS_HISTORY, JSON.stringify(HISTORY)); }
+
+function loadCustomLibrary(){
+  try{
+    const raw = localStorage.getItem(LS_LIBRARY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return [];
+}
+function saveCustomLibrary(){ localStorage.setItem(LS_LIBRARY, JSON.stringify(CUSTOM_LIBRARY)); }
+
+function loadActiveSession(){
+  try{
+    const raw = localStorage.getItem(LS_SESSION);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return null;
+}
+function saveActiveSession(){ localStorage.setItem(LS_SESSION, JSON.stringify(ACTIVE_SESSION)); }
+function clearActiveSession(){ ACTIVE_SESSION = null; localStorage.removeItem(LS_SESSION); }
+
+let PROGRAMS = loadPrograms();
+let HISTORY = loadHistory();
+let CUSTOM_LIBRARY = loadCustomLibrary();
+let ACTIVE_SESSION = loadActiveSession(); // {progKey, variantKey, startedAt, sets: [[bool,bool,bool],...], logs:[{weight,reps},...] per exercise}
+
+function fullLibrary(){ return DEFAULT_LIBRARY.concat(CUSTOM_LIBRARY); }
+
+/* ============================= HELPERS ============================= */
+
+function iconSvg(pattern, size){
+  size = size || 28;
+  const id = "ic-" + (pattern || "bodyweight");
+  return `<svg viewBox="0 0 48 48" width="${size}" height="${size}"><use href="#${id}"/></svg>`;
+}
+function fmtWeight(w){ return (w===null || w===undefined) ? "BW" : (w % 1 === 0 ? w : w.toFixed(1)) + " lb"; }
+function fmtDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined,{ weekday:'short', month:'short', day:'numeric' });
+}
+function todayStr(){
+  const d = new Date();
+  return d.toLocaleDateString(undefined,{ weekday:'long', month:'long', day:'numeric' });
+}
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+function openModal(html){
+  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('modal-bg').classList.add('show');
+}
+function closeModal(){ document.getElementById('modal-bg').classList.remove('show'); }
+document.getElementById('modal-bg').addEventListener('click', e=>{ if(e.target.id==='modal-bg') closeModal(); });
+
+/* ============================= TABS ============================= */
+
+const TABS = ['today','history','library','manage'];
+function showTab(name){
+  TABS.forEach(t=>{
+    document.getElementById('view-'+t).classList.toggle('active', t===name);
+  });
+  document.querySelectorAll('nav.tabbar button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tab===name);
+  });
+  if(name==='today') renderToday();
+  if(name==='history') renderHistory();
+  if(name==='library') renderLibrary();
+  if(name==='manage') renderManage();
+}
+document.querySelectorAll('nav.tabbar button').forEach(b=>{
+  b.addEventListener('click', ()=> showTab(b.dataset.tab));
+});
+
+/* ============================= TODAY VIEW ============================= */
+
+let SELECTED_PROG = Object.keys(PROGRAMS).sort((a,b)=>PROGRAMS[a].order-PROGRAMS[b].order)[0];
+let SELECTED_VARIANT = 'main';
+
+function renderToday(){
+  document.getElementById('header-sub').textContent = todayStr();
+  const view = document.getElementById('view-today');
+
+  if(ACTIVE_SESSION){
+    view.innerHTML = renderActiveSession();
+    bindActiveSessionEvents();
+    return;
+  }
+
+  const progKeys = Object.keys(PROGRAMS).sort((a,b)=>PROGRAMS[a].order-PROGRAMS[b].order);
+  let html = `<div class="section-label">Choose a program</div><div class="prog-grid">`;
+  progKeys.forEach(pk=>{
+    const prog = PROGRAMS[pk];
+    const variantKeys = Object.keys(prog.variants);
+    const isSel = pk === SELECTED_PROG;
+    html += `<div class="prog-card" data-prog="${pk}">
+      <div style="flex:1">
+        <div class="name">${prog.label}</div>
+        <div class="meta">${prog.variants[isSel?SELECTED_VARIANT:'main'].exercises.length || 0} exercises · ${prog.variants.main.exercises.length ? prog.variants.main.exercises.length+' set groups' : ''}</div>
+        ${isSel ? `<div class="variant-row">` + variantKeys.map(vk=>{
+          const empty = prog.variants[vk].exercises.length===0;
+          return `<span class="chip ${vk===SELECTED_VARIANT?'active':''}" data-variant="${vk}">${prog.variants[vk].label}${empty?' (empty)':''}</span>`;
+        }).join('') + `</div>` : ''}
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  const variant = PROGRAMS[SELECTED_PROG].variants[SELECTED_VARIANT];
+  html += `<div class="section-label">${PROGRAMS[SELECTED_PROG].label} — ${variant.label}</div>`;
+  if(variant.exercises.length===0){
+    html += `<div class="empty">
+      <p>This variant is empty. Add exercises to it from the Manage tab, then come back here to start it.</p>
+    </div>`;
+  } else {
+    html += `<div class="card">`;
+    variant.exercises.forEach(ex=>{
+      html += `<div class="ex-row">
+        <div class="ex-icon-wrap">${iconSvg(ex.pattern)}</div>
+        <div class="ex-info">
+          <div class="ex-name">${ex.name}</div>
+          <div class="ex-prescribed">${ex.sets} × ${ex.reps} ${ex.weight!==null && ex.weight!==undefined ? '× '+fmtWeight(ex.weight) : ''}</div>
+        </div>
+      </div>`;
+    });
+    html += `</div>
+    <button class="btn" id="start-workout-btn">Start Workout</button>`;
+  }
+
+  view.innerHTML = html;
+
+  view.querySelectorAll('.prog-card').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      if(e.target.closest('.chip')) return;
+      SELECTED_PROG = el.dataset.prog;
+      SELECTED_VARIANT = 'main';
+      renderToday();
+    });
+  });
+  view.querySelectorAll('.chip[data-variant]').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      SELECTED_VARIANT = el.dataset.variant;
+      renderToday();
+    });
+  });
+  const startBtn = document.getElementById('start-workout-btn');
+  if(startBtn) startBtn.addEventListener('click', startWorkout);
+}
+
+function startWorkout(){
+  const variant = PROGRAMS[SELECTED_PROG].variants[SELECTED_VARIANT];
+  ACTIVE_SESSION = {
+    progKey: SELECTED_PROG,
+    variantKey: SELECTED_VARIANT,
+    startedAt: new Date().toISOString(),
+    exercises: variant.exercises.map(ex=>({
+      name: ex.name, pattern: ex.pattern, prescribedSets: ex.sets, prescribedReps: ex.reps, prescribedWeight: ex.weight,
+      doneSets: new Array(ex.sets).fill(false),
+      actualWeight: ex.weight, actualReps: ex.reps, rpe: null
+    }))
+  };
+  saveActiveSession();
+  renderToday();
+}
+
+function renderActiveSession(){
+  const s = ACTIVE_SESSION;
+  const prog = PROGRAMS[s.progKey];
+  let html = `<div class="section-label">${prog.label} — ${prog.variants[s.variantKey].label} · in progress</div>`;
+  html += `<div class="card">`;
+  s.exercises.forEach((ex, i)=>{
+    html += `<div class="ex-row">
+      <div class="ex-icon-wrap">${iconSvg(ex.pattern)}</div>
+      <div class="ex-info">
+        <div class="ex-name">${ex.name}</div>
+        <div class="ex-prescribed">Target: ${ex.prescribedSets} × ${ex.prescribedReps} ${ex.prescribedWeight!==null?'× '+fmtWeight(ex.prescribedWeight):''}</div>
+        <div class="set-dots">${ex.doneSets.map((d,si)=>`<div class="set-dot ${d?'done':''}" data-ex="${i}" data-set="${si}">${si+1}</div>`).join('')}</div>
+        <div class="field-row">
+          <div class="field"><label>Weight</label><input type="number" step="0.5" inputmode="decimal" data-ex="${i}" data-field="actualWeight" value="${ex.actualWeight===null?'':ex.actualWeight}" placeholder="BW"></div>
+          <div class="field"><label>Reps</label><input type="number" inputmode="numeric" data-ex="${i}" data-field="actualReps" value="${ex.actualReps}"></div>
+          <div class="field"><label>RPE (1-5)</label><input type="number" min="1" max="5" inputmode="numeric" data-ex="${i}" data-field="rpe" value="${ex.rpe===null?'':ex.rpe}" placeholder="—"></div>
+        </div>
+      </div>
+    </div>`;
+  });
+  html += `</div>
+    <button class="btn" id="finish-workout-btn">Finish &amp; Save Workout</button>
+    <button class="btn ghost" id="cancel-workout-btn" style="margin-top:8px">Cancel Workout</button>`;
+  return html;
+}
+
+function bindActiveSessionEvents(){
+  const view = document.getElementById('view-today');
+  view.querySelectorAll('.set-dot').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const exi = +el.dataset.ex, si = +el.dataset.set;
+      const ex = ACTIVE_SESSION.exercises[exi];
+      ex.doneSets[si] = !ex.doneSets[si];
+      saveActiveSession();
+      renderToday();
+    });
+  });
+  view.querySelectorAll('input[data-field]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const exi = +el.dataset.ex, field = el.dataset.field;
+      let val = el.value === '' ? null : parseFloat(el.value);
+      ACTIVE_SESSION.exercises[exi][field] = val;
+      saveActiveSession();
+    });
+  });
+  const finishBtn = document.getElementById('finish-workout-btn');
+  if(finishBtn) finishBtn.addEventListener('click', finishWorkout);
+  const cancelBtn = document.getElementById('cancel-workout-btn');
+  if(cancelBtn) cancelBtn.addEventListener('click', ()=>{
+    if(confirm('Discard this in-progress workout?')){
+      clearActiveSession();
+      renderToday();
+    }
+  });
+}
+
+function finishWorkout(){
+  const s = ACTIVE_SESSION;
+  const entry = {
+    id: 'h_'+Date.now(),
+    date: new Date().toISOString(),
+    progKey: s.progKey,
+    progLabel: PROGRAMS[s.progKey].label,
+    variantKey: s.variantKey,
+    variantLabel: PROGRAMS[s.progKey].variants[s.variantKey].label,
+    exercises: s.exercises.map(ex=>({
+      name: ex.name, weight: ex.actualWeight, reps: ex.actualReps, rpe: ex.rpe,
+      setsCompleted: ex.doneSets.filter(Boolean).length, setsPrescribed: ex.prescribedSets
+    }))
+  };
+  HISTORY.unshift(entry);
+  saveHistory();
+  clearActiveSession();
+  toast('Workout saved');
+  renderToday();
+}
+
+/* ============================= HISTORY VIEW ============================= */
+
+function renderHistory(){
+  const view = document.getElementById('view-history');
+  if(HISTORY.length===0){
+    view.innerHTML = `<div class="empty"><p>No workouts logged yet. Finish a session from the Today tab and it'll show up here.</p></div>`;
+    return;
+  }
+  let html = `<div class="section-label">Sessions</div><div class="card">`;
+  HISTORY.forEach(h=>{
+    html += `<div class="hist-item" data-id="${h.id}">
+      <div class="hist-top">
+        <div>
+          <div class="hist-date">${fmtDate(h.date)}</div>
+          <div class="hist-prog">${h.progLabel} · ${h.variantLabel}</div>
+        </div>
+        <div style="color:var(--text-faint); font-size:12px">${h.exercises.length} ex</div>
+      </div>
+      <div class="hist-detail">
+        ${h.exercises.map(e=>`${e.name}: ${e.setsCompleted}/${e.setsPrescribed} sets · ${e.reps ?? '—'} reps × ${fmtWeight(e.weight)}${e.rpe?' · RPE '+e.rpe:''}`).join('<br>')}
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  html += `<div class="section-label">Progress by exercise</div>`;
+  const exNames = [...new Set(HISTORY.flatMap(h=>h.exercises.map(e=>e.name)))];
+  if(exNames.length){
+    html += `<div class="card"><div class="field"><label>Exercise</label>
+      <select class="plain" id="progress-select" style="width:100%">
+        ${exNames.map(n=>`<option value="${n}">${n}</option>`).join('')}
+      </select></div>
+      <div id="progress-chart" class="sparkline-wrap"></div>
+    </div>`;
+  }
+
+  view.innerHTML = html;
+
+  view.querySelectorAll('.hist-item').forEach(el=>{
+    el.addEventListener('click', ()=> el.classList.toggle('open'));
+  });
+  const sel = document.getElementById('progress-select');
+  if(sel){
+    sel.addEventListener('change', ()=> renderProgressChart(sel.value));
+    renderProgressChart(sel.value);
+  }
+}
+
+function renderProgressChart(exName){
+  const points = HISTORY.slice().reverse()
+    .flatMap(h=> h.exercises.filter(e=>e.name===exName && e.weight!==null).map(e=>({date:h.date, weight:e.weight})));
+  const el = document.getElementById('progress-chart');
+  if(!el) return;
+  if(points.length < 2){
+    el.innerHTML = `<div style="color:var(--text-faint); font-size:12.5px; padding:8px 0">Log this exercise a couple more times to see a trend line.</div>`;
+    return;
+  }
+  const w = 500, h = 90, pad = 10;
+  const ws = points.map(p=>p.weight);
+  const min = Math.min(...ws), max = Math.max(...ws);
+  const range = (max-min) || 1;
+  const step = (w - pad*2) / (points.length-1);
+  const coords = points.map((p,i)=>{
+    const x = pad + i*step;
+    const y = pad + (1 - (p.weight-min)/range) * (h - pad*2);
+    return [x,y];
+  });
+  const path = coords.map((c,i)=> (i===0?'M':'L')+c[0].toFixed(1)+','+c[1].toFixed(1)).join(' ');
+  const dots = coords.map(c=>`<circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="3" fill="var(--accent)"/>`).join('');
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%; height:90px;">
+    <path d="${path}" stroke="var(--accent)" stroke-width="2" fill="none"/>
+    ${dots}
+  </svg>
+  <div style="display:flex; justify-content:space-between; color:var(--text-faint); font-size:11px; font-family:var(--font-mono)">
+    <span>${fmtWeight(min)}</span><span>${fmtWeight(max)}</span>
+  </div>`;
+}
+
+/* ============================= LIBRARY VIEW ============================= */
+
+let LIB_FILTER = 'All';
+let LIB_SEARCH = '';
+
+function renderLibrary(){
+  const view = document.getElementById('view-library');
+  const lib = fullLibrary();
+  const cats = ['All', ...new Set(lib.map(e=>e.cat))];
+
+  let html = `<input class="search-bar" id="lib-search" placeholder="Search exercises…" value="${LIB_SEARCH}">
+  <div class="filter-row">${cats.map(c=>`<span class="chip ${c===LIB_FILTER?'active':''}" data-cat="${c}">${c}</span>`).join('')}</div>
+  <div class="card">`;
+
+  const filtered = lib.filter(e=>{
+    const matchesCat = LIB_FILTER==='All' || e.cat===LIB_FILTER;
+    const matchesSearch = !LIB_SEARCH || e.name.toLowerCase().includes(LIB_SEARCH.toLowerCase()) || e.muscles.toLowerCase().includes(LIB_SEARCH.toLowerCase());
+    return matchesCat && matchesSearch;
+  });
+
+  if(filtered.length===0){
+    html += `<div class="empty"><p>No exercises match. Try a different search or add one from Manage.</p></div>`;
+  } else {
+    filtered.forEach(e=>{
+      html += `<div class="lib-row-wrap" data-name="${e.name}">
+        <div class="lib-row">
+          <div class="ex-icon-wrap">${iconSvg(e.pattern)}</div>
+          <div class="ex-info">
+            <div class="lib-name">${e.name}</div>
+            <div class="lib-muscles">${e.muscles} · ${EQUIP_LABEL[e.equip]||e.equip}</div>
+          </div>
+        </div>
+        <div class="lib-detail">${e.cue}</div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  view.innerHTML = html;
+
+  document.getElementById('lib-search').addEventListener('input', (e)=>{
+    LIB_SEARCH = e.target.value; renderLibrary();
+    document.getElementById('lib-search').focus();
+    document.getElementById('lib-search').selectionStart = document.getElementById('lib-search').value.length;
+  });
+  view.querySelectorAll('.chip[data-cat]').forEach(el=>{
+    el.addEventListener('click', ()=>{ LIB_FILTER = el.dataset.cat; renderLibrary(); });
+  });
+  view.querySelectorAll('.lib-row-wrap').forEach(el=>{
+    el.addEventListener('click', ()=> el.classList.toggle('open'));
+  });
+}
+
+/* ============================= MANAGE VIEW ============================= */
+
+function renderManage(){
+  const view = document.getElementById('view-manage');
+  let html = `<div class="section-label">Edit programs</div>`;
+
+  Object.keys(PROGRAMS).sort((a,b)=>PROGRAMS[a].order-PROGRAMS[b].order).forEach(pk=>{
+    const prog = PROGRAMS[pk];
+    html += `<div class="card">
+      <div class="ex-name" style="margin-bottom:8px">${prog.label}</div>`;
+    Object.keys(prog.variants).forEach(vk=>{
+      const variant = prog.variants[vk];
+      html += `<div style="margin-bottom:10px">
+        <div style="display:flex; justify-content:space-between; align-items:center">
+          <span style="color:var(--text-dim); font-size:12.5px; font-weight:600; text-transform:uppercase; letter-spacing:.5px">${variant.label}</span>
+          <span class="btn small ghost" data-add-ex="${pk}:${vk}">+ Add exercise</span>
+        </div>`;
+      if(variant.exercises.length===0){
+        html += `<div style="color:var(--text-faint); font-size:12.5px; padding:8px 0">No exercises yet.</div>`;
+      } else {
+        html += `<div class="manage-list">`;
+        variant.exercises.forEach((ex,i)=>{
+          html += `<div class="ex-row">
+            <div class="ex-icon-wrap">${iconSvg(ex.pattern)}</div>
+            <div class="ex-info">
+              <div class="ex-name">${ex.name}</div>
+              <div class="ex-prescribed">${ex.sets} × ${ex.reps} ${ex.weight!==null?'× '+fmtWeight(ex.weight):''}</div>
+            </div>
+            <span class="icon-x" data-remove-ex="${pk}:${vk}:${i}" style="padding:4px 8px; font-size:18px; cursor:pointer">✕</span>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+      html += `</div>`;
+    });
+    html += `</div>`;
+  });
+
+  html += `<div class="section-label">Backup</div>
+  <div class="card">
+    <button class="btn ghost" id="export-btn">Export JSON</button>
+    <div style="height:8px"></div>
+    <button class="btn ghost" id="import-btn">Import JSON</button>
+    <textarea class="jsonbox" id="import-box" placeholder="Paste exported JSON here, then tap Import JSON" style="margin-top:8px"></textarea>
+  </div>
+
+  <div class="section-label">Reset</div>
+  <div class="card">
+    <button class="btn danger" id="reset-btn">Reset all data</button>
+  </div>`;
+
+  view.innerHTML = html;
+
+  view.querySelectorAll('[data-add-ex]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const [pk,vk] = el.dataset.addEx.split(':');
+      openAddExerciseModal(pk,vk);
+    });
+  });
+  view.querySelectorAll('[data-remove-ex]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const [pk,vk,i] = el.dataset.removeEx.split(':');
+      PROGRAMS[pk].variants[vk].exercises.splice(+i,1);
+      savePrograms();
+      renderManage();
+    });
+  });
+  document.getElementById('export-btn').addEventListener('click', doExport);
+  document.getElementById('import-btn').addEventListener('click', doImport);
+  document.getElementById('reset-btn').addEventListener('click', doReset);
+}
+
+function openAddExerciseModal(pk, vk){
+  const patternOptions = ['press_horizontal','press_incline','press_vertical','row_horizontal','pulldown','pullup','hinge','squat','lunge','curl','triceps_extension','raise_lateral','fly','shrug','calf','core','adduction','leg_extension','bodyweight','hipthrust'];
+  openModal(`
+    <span class="close-x" id="modal-close">✕</span>
+    <h3>Add Exercise</h3>
+    <div class="field"><label>Name</label><input id="m-name" placeholder="e.g. Cable Fly"></div>
+    <div class="field-row">
+      <div class="field"><label>Sets</label><input id="m-sets" type="number" value="3"></div>
+      <div class="field"><label>Reps</label><input id="m-reps" type="number" value="10"></div>
+      <div class="field"><label>Weight (blank = BW)</label><input id="m-weight" type="number" step="0.5"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Equipment</label>
+        <select id="m-equip" class="plain" style="width:100%">${Object.keys(EQUIP_LABEL).map(k=>`<option value="${k}">${EQUIP_LABEL[k]}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Icon</label>
+        <select id="m-pattern" class="plain" style="width:100%">${patternOptions.map(p=>`<option value="${p}">${p.replace('_',' ')}</option>`).join('')}</select>
+      </div>
+    </div>
+    <button class="btn" id="m-save" style="margin-top:14px">Add to ${PROGRAMS[pk].variants[vk].label}</button>
+  `);
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('m-save').addEventListener('click', ()=>{
+    const name = document.getElementById('m-name').value.trim();
+    if(!name){ toast('Enter a name'); return; }
+    const sets = parseInt(document.getElementById('m-sets').value)||3;
+    const reps = parseInt(document.getElementById('m-reps').value)||10;
+    const wRaw = document.getElementById('m-weight').value;
+    const weight = wRaw==='' ? null : parseFloat(wRaw);
+    const equip = document.getElementById('m-equip').value;
+    const pattern = document.getElementById('m-pattern').value;
+    PROGRAMS[pk].variants[vk].exercises.push({name, equip, pattern, sets, reps, weight});
+    savePrograms();
+    closeModal();
+    renderManage();
+    toast('Exercise added');
+  });
+}
+
+function doExport(){
+  const payload = { programs: PROGRAMS, history: HISTORY, customLibrary: CUSTOM_LIBRARY, exportedAt: new Date().toISOString() };
+  const json = JSON.stringify(payload, null, 2);
+  const box = document.getElementById('import-box');
+  box.value = json;
+  if(navigator.share){
+    // best effort, ignore failure silently
+  }
+  // Also trigger a download
+  const blob = new Blob([json], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'iron-log-backup.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Exported — JSON also shown below to copy');
+}
+
+function doImport(){
+  const box = document.getElementById('import-box');
+  try{
+    const data = JSON.parse(box.value);
+    if(data.programs) PROGRAMS = data.programs;
+    if(data.history) HISTORY = data.history;
+    if(data.customLibrary) CUSTOM_LIBRARY = data.customLibrary;
+    savePrograms(); saveHistory(); saveCustomLibrary();
+    toast('Import successful');
+    renderManage();
+  }catch(e){
+    toast('Invalid JSON');
+  }
+}
+
+function doReset(){
+  if(!confirm('This clears all workouts, custom exercises, and edits. Continue?')) return;
+  localStorage.removeItem(LS_PROGRAMS);
+  localStorage.removeItem(LS_HISTORY);
+  localStorage.removeItem(LS_LIBRARY);
+  localStorage.removeItem(LS_SESSION);
+  PROGRAMS = loadPrograms(); HISTORY = []; CUSTOM_LIBRARY = []; ACTIVE_SESSION = null;
+  toast('Reset complete');
+  showTab('today');
+}
+
+/* ============================= INIT ============================= */
+
+renderToday();
+</script>
+</body>
+</html>
