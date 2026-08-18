@@ -265,7 +265,7 @@
     <div class="auth-toggle">
       <span id="auth-toggle-prompt">Don't have an account?</span> <a id="auth-toggle-link">Sign up</a>
     </div>
-    <div class="auth-skip"><a id="auth-skip-link">Skip for now — use this device only</a></div>
+    <div class="auth-skip"><a id="auth-skip-link">Skip for now — use this device only ›</a></div>
   </div>
 </div>
 
@@ -512,6 +512,8 @@ let CLOUD_REF = null;
 let SUPPRESS_SYNC = false;
 let FIREBASE_READY = false;
 let AUTH_MODE = 'login'; // 'login' | 'signup'
+const LS_AUTH_SKIPPED = "ironlog_auth_skipped_v1";
+function authSkipped(){ return localStorage.getItem(LS_AUTH_SKIPPED) === '1'; }
 
 function setSyncBadge(state, text){
   const badge = document.getElementById('sync-badge');
@@ -522,20 +524,34 @@ function setSyncBadge(state, text){
   label.textContent = text;
 }
 
+function hideAuthGate(){ document.getElementById('auth-gate').style.display = 'none'; }
+function showAuthGate(){ document.getElementById('auth-gate').style.display = 'flex'; }
+
 function initFirebase(){
+  // If the user already chose to skip sign-in, never block the app on load —
+  // it'll only reappear if they explicitly tap "Sign In / Sync" from Manage.
+  if(authSkipped()) hideAuthGate();
   try{
-    if(typeof firebase === 'undefined') throw new Error('Firebase SDK did not load (likely offline)');
+    if(typeof firebase === 'undefined'){
+      // SDK script may still be loading on a slow connection — retry once shortly
+      if(!initFirebase._retried){
+        initFirebase._retried = true;
+        setTimeout(initFirebase, 2000);
+      }
+      throw new Error('Firebase SDK not available yet');
+    }
     if(firebaseConfig.apiKey.startsWith('PASTE_')){
       setSyncBadge(null, 'Cloud sync not configured');
-      document.getElementById('auth-gate').style.display = 'none';
+      hideAuthGate();
       return;
     }
-    firebase.initializeApp(firebaseConfig);
+    if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     FIREBASE_READY = true;
     firebase.auth().onAuthStateChanged(user=>{
       if(user){
         CURRENT_USER = user;
-        document.getElementById('auth-gate').style.display = 'none';
+        localStorage.removeItem(LS_AUTH_SKIPPED);
+        hideAuthGate();
         CLOUD_REF = firebase.database().ref('users/' + user.uid + '/data');
         setSyncBadge('online', user.email);
         pullFromCloudThenListen();
@@ -543,7 +559,7 @@ function initFirebase(){
         CURRENT_USER = null;
         CLOUD_REF = null;
         setSyncBadge(null, 'Local only');
-        document.getElementById('auth-gate').style.display = 'flex';
+        if(!authSkipped()) showAuthGate(); else hideAuthGate();
       }
     });
     window.addEventListener('online', ()=>{ if(CURRENT_USER) setSyncBadge('online', CURRENT_USER.email); });
@@ -551,7 +567,7 @@ function initFirebase(){
   }catch(e){
     console.warn('Cloud sync unavailable, continuing offline-only:', e);
     setSyncBadge(null, 'Local only');
-    document.getElementById('auth-gate').style.display = 'none';
+    if(!authSkipped()) hideAuthGate(); // never block the app just because the SDK hasn't loaded
   }
 }
 
@@ -624,7 +640,8 @@ document.getElementById('auth-submit-btn').addEventListener('click', ()=>{
   action.catch(err=>{ errEl.textContent = err.message.replace(/^Firebase:\s*/,''); });
 });
 document.getElementById('auth-skip-link').addEventListener('click', ()=>{
-  document.getElementById('auth-gate').style.display = 'none';
+  localStorage.setItem(LS_AUTH_SKIPPED, '1');
+  hideAuthGate();
 });
 
 /* ============================= HELPERS ============================= */
@@ -1151,7 +1168,7 @@ function renderManage(){
   const signoutBtn = document.getElementById('signout-btn');
   if(signoutBtn) signoutBtn.addEventListener('click', ()=>{ signOutCloud(); renderManage(); });
   const signinAgainBtn = document.getElementById('signin-again-btn');
-  if(signinAgainBtn) signinAgainBtn.addEventListener('click', ()=>{ document.getElementById('auth-gate').style.display = 'flex'; });
+  if(signinAgainBtn) signinAgainBtn.addEventListener('click', ()=>{ localStorage.removeItem(LS_AUTH_SKIPPED); showAuthGate(); });
 }
 
 function openAddExerciseModal(pk, vk){
