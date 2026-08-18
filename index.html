@@ -563,17 +563,32 @@ function renderToday(){
   if(startBtn) startBtn.addEventListener('click', startWorkout);
 }
 
+function findLastPerformance(name){
+  // HISTORY is newest-first; find the most recent session that logged this exact exercise name
+  for(const h of HISTORY){
+    const match = h.exercises.find(e=>e.name===name);
+    if(match) return { weight: match.weight, reps: match.reps, date: h.date };
+  }
+  return null;
+}
+
 function startWorkout(){
   const variant = PROGRAMS[SELECTED_PROG].variants[SELECTED_VARIANT];
   ACTIVE_SESSION = {
     progKey: SELECTED_PROG,
     variantKey: SELECTED_VARIANT,
     startedAt: new Date().toISOString(),
-    exercises: variant.exercises.map(ex=>({
-      name: ex.name, pattern: ex.pattern, prescribedSets: ex.sets, prescribedReps: ex.reps, prescribedWeight: ex.weight,
-      doneSets: new Array(ex.sets).fill(false),
-      actualWeight: ex.weight, actualReps: ex.reps, rpe: null
-    }))
+    exercises: variant.exercises.map(ex=>{
+      const last = findLastPerformance(ex.name);
+      return {
+        name: ex.name, pattern: ex.pattern, prescribedSets: ex.sets, prescribedReps: ex.reps, prescribedWeight: ex.weight,
+        lastWeight: last ? last.weight : null, lastReps: last ? last.reps : null, lastDate: last ? last.date : null,
+        doneSets: new Array(ex.sets).fill(false),
+        actualWeight: last ? last.weight : ex.weight,
+        actualReps: last ? last.reps : ex.reps,
+        rpe: null
+      };
+    })
   };
   saveActiveSession();
   renderToday();
@@ -589,7 +604,7 @@ function renderActiveSession(){
       <div class="ex-icon-wrap">${iconSvg(ex.pattern)}</div>
       <div class="ex-info">
         <div class="ex-name">${ex.name}${ex.addedThisSession ? ' <span style="color:var(--accent-2); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.4px">· today only</span>' : ''}</div>
-        <div class="ex-prescribed">Target: ${ex.prescribedSets} × ${ex.prescribedReps} ${ex.prescribedWeight!==null?'× '+fmtWeight(ex.prescribedWeight):''}</div>
+        <div class="ex-prescribed">${ex.lastWeight!==null || ex.lastReps!==null ? `Last time: ${ex.lastReps} × ${fmtWeight(ex.lastWeight)} <span style="color:var(--text-faint)">(${fmtDate(ex.lastDate)})</span>` : `Target: ${ex.prescribedSets} × ${ex.prescribedReps} ${ex.prescribedWeight!==null?'× '+fmtWeight(ex.prescribedWeight):''}`}</div>
         <div class="set-dots">${ex.doneSets.map((d,si)=>`<div class="set-dot ${d?'done':''}" data-ex="${i}" data-set="${si}">${si+1}</div>`).join('')}</div>
         <div class="field-row">
           <div class="field"><label>Weight</label><input type="number" step="0.5" inputmode="decimal" data-ex="${i}" data-field="actualWeight" value="${ex.actualWeight===null?'':ex.actualWeight}" placeholder="BW"></div>
@@ -679,6 +694,11 @@ function openAddSessionExerciseModal(){
     if(picked){
       document.getElementById('m-name').value = picked.name;
       document.getElementById('m-pattern').value = picked.pattern;
+      const last = findLastPerformance(picked.name);
+      if(last){
+        document.getElementById('m-weight').value = last.weight===null ? '' : last.weight;
+        document.getElementById('m-reps').value = last.reps;
+      }
     }
   });
   document.getElementById('m-save').addEventListener('click', ()=>{
@@ -689,10 +709,12 @@ function openAddSessionExerciseModal(){
     const wRaw = document.getElementById('m-weight').value;
     const weight = wRaw==='' ? null : parseFloat(wRaw);
     const pattern = document.getElementById('m-pattern').value;
+    const last = findLastPerformance(name);
     ACTIVE_SESSION.exercises.push({
       name, pattern, prescribedSets: sets, prescribedReps: reps, prescribedWeight: weight,
+      lastWeight: last ? last.weight : null, lastReps: last ? last.reps : null, lastDate: last ? last.date : null,
       doneSets: new Array(sets).fill(false),
-      actualWeight: weight, actualReps: reps, rpe: null,
+      actualWeight: last ? last.weight : weight, actualReps: last ? last.reps : reps, rpe: null,
       addedThisSession: true
     });
     saveActiveSession();
