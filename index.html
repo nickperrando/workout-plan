@@ -588,7 +588,7 @@ function renderActiveSession(){
     html += `<div class="ex-row">
       <div class="ex-icon-wrap">${iconSvg(ex.pattern)}</div>
       <div class="ex-info">
-        <div class="ex-name">${ex.name}</div>
+        <div class="ex-name">${ex.name}${ex.addedThisSession ? ' <span style="color:var(--accent-2); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.4px">· today only</span>' : ''}</div>
         <div class="ex-prescribed">Target: ${ex.prescribedSets} × ${ex.prescribedReps} ${ex.prescribedWeight!==null?'× '+fmtWeight(ex.prescribedWeight):''}</div>
         <div class="set-dots">${ex.doneSets.map((d,si)=>`<div class="set-dot ${d?'done':''}" data-ex="${i}" data-set="${si}">${si+1}</div>`).join('')}</div>
         <div class="field-row">
@@ -597,9 +597,12 @@ function renderActiveSession(){
           <div class="field"><label>RPE (1-5)</label><input type="number" min="1" max="5" inputmode="numeric" data-ex="${i}" data-field="rpe" value="${ex.rpe===null?'':ex.rpe}" placeholder="—"></div>
         </div>
       </div>
+      <span class="icon-x" data-remove-session-ex="${i}" style="padding:4px 8px; font-size:18px; cursor:pointer">✕</span>
     </div>`;
   });
   html += `</div>
+    <button class="btn ghost" id="add-session-ex-btn">+ Add exercise for today</button>
+    <div style="height:8px"></div>
     <button class="btn" id="finish-workout-btn">Finish &amp; Save Workout</button>
     <button class="btn ghost" id="cancel-workout-btn" style="margin-top:8px">Cancel Workout</button>`;
   return html;
@@ -632,6 +635,70 @@ function bindActiveSessionEvents(){
       clearActiveSession();
       renderToday();
     }
+  });
+  const addExBtn = document.getElementById('add-session-ex-btn');
+  if(addExBtn) addExBtn.addEventListener('click', openAddSessionExerciseModal);
+  view.querySelectorAll('[data-remove-session-ex]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const i = +el.dataset.removeSessionEx;
+      ACTIVE_SESSION.exercises.splice(i,1);
+      saveActiveSession();
+      renderToday();
+    });
+  });
+}
+
+function openAddSessionExerciseModal(){
+  const patternOptions = ['press_horizontal','press_incline','press_vertical','row_horizontal','pulldown','pullup','hinge','squat','lunge','curl','triceps_extension','raise_lateral','fly','shrug','calf','core','adduction','leg_extension','bodyweight','hipthrust'];
+  // Offer a quick pick from the exercise library, or a custom name
+  const lib = fullLibrary();
+  openModal(`
+    <span class="close-x" id="modal-close">✕</span>
+    <h3>Add Exercise — Today Only</h3>
+    <div class="field"><label>Pick from library (optional)</label>
+      <select id="m-lib-pick" class="plain" style="width:100%">
+        <option value="">— custom —</option>
+        ${lib.map(e=>`<option value="${e.name}">${e.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Name</label><input id="m-name" placeholder="e.g. Cable Fly"></div>
+    <div class="field-row">
+      <div class="field"><label>Sets</label><input id="m-sets" type="number" value="3"></div>
+      <div class="field"><label>Reps</label><input id="m-reps" type="number" value="10"></div>
+      <div class="field"><label>Weight (blank = BW)</label><input id="m-weight" type="number" step="0.5"></div>
+    </div>
+    <div class="field"><label>Icon</label>
+      <select id="m-pattern" class="plain" style="width:100%">${patternOptions.map(p=>`<option value="${p}">${p.replace('_',' ')}</option>`).join('')}</select>
+    </div>
+    <div style="color:var(--text-faint); font-size:12px; margin-top:10px">This only affects today's workout — your saved program templates won't change.</div>
+    <button class="btn" id="m-save" style="margin-top:14px">Add to Today's Workout</button>
+  `);
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('m-lib-pick').addEventListener('change', (e)=>{
+    const picked = lib.find(x=>x.name===e.target.value);
+    if(picked){
+      document.getElementById('m-name').value = picked.name;
+      document.getElementById('m-pattern').value = picked.pattern;
+    }
+  });
+  document.getElementById('m-save').addEventListener('click', ()=>{
+    const name = document.getElementById('m-name').value.trim();
+    if(!name){ toast('Enter a name'); return; }
+    const sets = parseInt(document.getElementById('m-sets').value)||3;
+    const reps = parseInt(document.getElementById('m-reps').value)||10;
+    const wRaw = document.getElementById('m-weight').value;
+    const weight = wRaw==='' ? null : parseFloat(wRaw);
+    const pattern = document.getElementById('m-pattern').value;
+    ACTIVE_SESSION.exercises.push({
+      name, pattern, prescribedSets: sets, prescribedReps: reps, prescribedWeight: weight,
+      doneSets: new Array(sets).fill(false),
+      actualWeight: weight, actualReps: reps, rpe: null,
+      addedThisSession: true
+    });
+    saveActiveSession();
+    closeModal();
+    renderToday();
+    toast("Added to today's workout");
   });
 }
 
