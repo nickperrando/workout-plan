@@ -511,6 +511,7 @@ let CURRENT_USER = null;
 let CLOUD_REF = null;
 let SUPPRESS_SYNC = false;
 let FIREBASE_READY = false;
+let FIREBASE_INIT_ERROR = null; // human-readable reason, shown to the user if sign-in is attempted before we're ready
 let AUTH_MODE = 'login'; // 'login' | 'signup'
 const LS_AUTH_SKIPPED = "ironlog_auth_skipped_v1";
 function authSkipped(){ return localStorage.getItem(LS_AUTH_SKIPPED) === '1'; }
@@ -527,26 +528,30 @@ function setSyncBadge(state, text){
 function hideAuthGate(){ document.getElementById('auth-gate').style.display = 'none'; }
 function showAuthGate(){ document.getElementById('auth-gate').style.display = 'flex'; }
 
-function initFirebase(){
+function initFirebase(attempt){
+  attempt = attempt || 1;
   // If the user already chose to skip sign-in, never block the app on load —
   // it'll only reappear if they explicitly tap "Sign In / Sync" from Manage.
   if(authSkipped()) hideAuthGate();
   try{
     if(typeof firebase === 'undefined'){
-      // SDK script may still be loading on a slow connection — retry once shortly
-      if(!initFirebase._retried){
-        initFirebase._retried = true;
-        setTimeout(initFirebase, 2000);
+      if(attempt <= 4){
+        // SDK script may still be loading (slow connection, or a content blocker delaying it) — retry with backoff
+        setTimeout(()=> initFirebase(attempt+1), attempt * 1500);
+        throw new Error('Firebase SDK not loaded yet — retrying (attempt ' + attempt + ')');
       }
-      throw new Error('Firebase SDK not available yet');
+      FIREBASE_INIT_ERROR = "The Firebase library never loaded from gstatic.com. This is usually a content blocker, ad blocker, or restricted network blocking that domain — check Safari's Content Blockers / Extensions, or try a different network.";
+      throw new Error(FIREBASE_INIT_ERROR);
     }
     if(firebaseConfig.apiKey.startsWith('PASTE_')){
+      FIREBASE_INIT_ERROR = "This copy of the app still has placeholder Firebase config values.";
       setSyncBadge(null, 'Cloud sync not configured');
       hideAuthGate();
       return;
     }
     if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     FIREBASE_READY = true;
+    FIREBASE_INIT_ERROR = null;
     firebase.auth().onAuthStateChanged(user=>{
       if(user){
         CURRENT_USER = user;
@@ -565,9 +570,13 @@ function initFirebase(){
     window.addEventListener('online', ()=>{ if(CURRENT_USER) setSyncBadge('online', CURRENT_USER.email); });
     window.addEventListener('offline', ()=>{ if(CURRENT_USER) setSyncBadge('offline', 'Offline — will sync later'); });
   }catch(e){
-    console.warn('Cloud sync unavailable, continuing offline-only:', e);
+    console.warn('Cloud sync unavailable:', e);
     setSyncBadge(null, 'Local only');
     if(!authSkipped()) hideAuthGate(); // never block the app just because the SDK hasn't loaded
+    if(FIREBASE_INIT_ERROR){
+      const errEl = document.getElementById('auth-error');
+      if(errEl) errEl.textContent = FIREBASE_INIT_ERROR;
+    }
   }
 }
 
@@ -632,7 +641,7 @@ document.getElementById('auth-submit-btn').addEventListener('click', ()=>{
   const password = document.getElementById('auth-password').value;
   const errEl = document.getElementById('auth-error');
   errEl.textContent = '';
-  if(!FIREBASE_READY){ errEl.textContent = 'Cloud sync isn\'t configured yet.'; return; }
+  if(!FIREBASE_READY){ errEl.textContent = FIREBASE_INIT_ERROR || 'Cloud sync isn\'t ready yet — try again in a moment.'; return; }
   if(!email || !password){ errEl.textContent = 'Enter an email and password.'; return; }
   const action = AUTH_MODE === 'login'
     ? firebase.auth().signInWithEmailAndPassword(email, password)
