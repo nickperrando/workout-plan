@@ -445,10 +445,31 @@ const LS_HISTORY = "ironlog_history_v1";
 const LS_LIBRARY = "ironlog_library_custom_v1";
 const LS_SESSION = "ironlog_active_session_v1";
 
+// Repairs any program data that's missing fields — from an older app version, a partial
+// import, or corrupted storage — so the app can never crash on malformed program data again.
+function sanitizePrograms(progs){
+  const clean = {};
+  Object.keys(progs || {}).forEach((pk, i)=>{
+    const p = progs[pk];
+    if(!p || typeof p !== 'object') return;
+    const variants = {};
+    Object.keys(p.variants || {}).forEach(vk=>{
+      const v = (p.variants[vk] && typeof p.variants[vk] === 'object') ? p.variants[vk] : {};
+      variants[vk] = {
+        label: v.label || vk,
+        exercises: Array.isArray(v.exercises) ? v.exercises : []
+      };
+    });
+    if(!variants.main) variants.main = { label:'Main', exercises:[] };
+    clean[pk] = { label: p.label || pk, order: typeof p.order === 'number' ? p.order : i, variants };
+  });
+  return Object.keys(clean).length ? clean : JSON.parse(JSON.stringify(DEFAULT_PROGRAMS));
+}
+
 function loadPrograms(){
   try{
     const raw = localStorage.getItem(LS_PROGRAMS);
-    if(raw) return JSON.parse(raw);
+    if(raw) return sanitizePrograms(JSON.parse(raw));
   }catch(e){}
   return JSON.parse(JSON.stringify(DEFAULT_PROGRAMS));
 }
@@ -494,7 +515,12 @@ function fullLibrary(){ return DEFAULT_LIBRARY.concat(CUSTOM_LIBRARY); }
 // sync pulls in data from a different app version).
 function getVariant(prog, key){
   if(!prog || !prog.variants) return { label:'Unknown', exercises:[] };
-  return prog.variants[key] || prog.variants.main || Object.values(prog.variants)[0] || { label:'Unknown', exercises:[] };
+  let v = prog.variants[key] || prog.variants.main || Object.values(prog.variants)[0] || { label:'Unknown', exercises:[] };
+  // Normalize — repairs any variant object that's missing fields due to older/corrupted stored data
+  if(!v || typeof v !== 'object') v = {};
+  if(!Array.isArray(v.exercises)) v.exercises = [];
+  if(!v.label) v.label = 'Unknown';
+  return v;
 }
 
 /* ============================= FIREBASE CLOUD SYNC ============================= */
@@ -672,7 +698,7 @@ function pullFromCloudThenListen(){
 
 function applyRemoteData(remote){
   SUPPRESS_SYNC = true;
-  if(remote.programs) PROGRAMS = remote.programs;
+  if(remote.programs) PROGRAMS = sanitizePrograms(remote.programs);
   if(remote.history) HISTORY = remote.history;
   if(remote.customLibrary) CUSTOM_LIBRARY = remote.customLibrary;
   localStorage.setItem(LS_PROGRAMS, JSON.stringify(PROGRAMS));
@@ -1315,7 +1341,7 @@ function doImport(){
   const box = document.getElementById('import-box');
   try{
     const data = JSON.parse(box.value);
-    if(data.programs) PROGRAMS = data.programs;
+    if(data.programs) PROGRAMS = sanitizePrograms(data.programs);
     if(data.history) HISTORY = data.history;
     if(data.customLibrary) CUSTOM_LIBRARY = data.customLibrary;
     savePrograms(); saveHistory(); saveCustomLibrary();
@@ -1338,9 +1364,10 @@ function doReset(){
 }
 
 /* ============================= INIT ============================= */
-
-renderToday();
-initFirebase();
+// Each init step is isolated — a crash in one (e.g. bad stored data breaking a render)
+// must never prevent the others from running, especially cloud sync starting up.
+try{ renderToday(); }catch(e){ console.error('renderToday() failed on load:', e); debugLog('renderToday() crashed on load: ' + e.message); }
+try{ initFirebase(); }catch(e){ console.error('initFirebase() failed on load:', e); debugLog('initFirebase() crashed on load: ' + e.message); }
 </script>
 </body>
 </html>
