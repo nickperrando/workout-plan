@@ -245,7 +245,7 @@
 
   .sync-badge{
     display:inline-flex; align-items:center; gap:5px; font-size:11px; font-family:var(--font-mono);
-    color:var(--text-faint); margin-top:3px;
+    color:var(--text-faint); margin-top:3px; cursor:pointer; text-decoration:underline; text-decoration-style:dotted;
   }
   .sync-badge .dot{ width:6px; height:6px; border-radius:50%; background:var(--text-faint); }
   .sync-badge.online .dot{ background:var(--good); }
@@ -525,6 +525,38 @@ function setSyncBadge(state, text){
   label.textContent = text;
 }
 
+/* ---- on-device debug log, so we can diagnose without a computer ---- */
+let DEBUG_LOG = [];
+function debugLog(msg){
+  const line = new Date().toLocaleTimeString() + '  ' + msg;
+  DEBUG_LOG.push(line);
+  if(DEBUG_LOG.length > 80) DEBUG_LOG.shift();
+  console.log('[IronLog]', msg);
+}
+window.addEventListener('error', e=> debugLog('JS ERROR: ' + e.message + ' (' + (e.filename||'') + ':' + (e.lineno||'') + ')'));
+window.addEventListener('unhandledrejection', e=> debugLog('PROMISE REJECTED: ' + (e.reason && e.reason.message ? e.reason.message : e.reason)));
+
+function openDebugLog(){
+  const body = DEBUG_LOG.length
+    ? DEBUG_LOG.map(l=>l.replace(/</g,'&lt;')).join('\n')
+    : '(empty — nothing logged yet)';
+  openModal(`
+    <span class="close-x" id="modal-close">✕</span>
+    <h3>Sync Debug Log</h3>
+    <textarea class="jsonbox" style="height:280px; font-size:11px;" readonly>${body}</textarea>
+    <button class="btn ghost" id="debug-copy-btn" style="margin-top:10px">Copy Log</button>
+  `);
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('debug-copy-btn').addEventListener('click', ()=>{
+    const ta = document.querySelector('#modal-body textarea');
+    ta.select();
+    try{ document.execCommand('copy'); toast('Copied'); }
+    catch(e){ if(navigator.clipboard) navigator.clipboard.writeText(ta.value).then(()=>toast('Copied')); }
+  });
+}
+document.getElementById('sync-badge').addEventListener('click', openDebugLog);
+document.getElementById('sync-badge').style.cursor = 'pointer';
+
 function hideAuthGate(){ document.getElementById('auth-gate').style.display = 'none'; }
 function showAuthGate(){ document.getElementById('auth-gate').style.display = 'flex'; }
 
@@ -542,6 +574,7 @@ function setAuthButtonReady(){
 
 function initFirebase(attempt){
   attempt = attempt || 1;
+  debugLog('initFirebase() attempt ' + attempt + ' — typeof firebase = ' + typeof firebase);
   // If the user already chose to skip sign-in, never block the app on load —
   // it'll only reappear if they explicitly tap "Sign In / Sync" from Manage.
   if(authSkipped()) hideAuthGate();
@@ -550,24 +583,30 @@ function initFirebase(attempt){
     if(typeof firebase === 'undefined'){
       if(attempt <= 4){
         // SDK script may still be loading (slow connection, or a content blocker delaying it) — retry with backoff
+        debugLog('Firebase SDK not present yet, retrying in ' + (attempt*1500) + 'ms');
         setTimeout(()=> initFirebase(attempt+1), attempt * 1500);
         throw new Error('Firebase SDK not loaded yet — retrying (attempt ' + attempt + ')');
       }
       FIREBASE_INIT_ERROR = "The Firebase library never loaded from gstatic.com. This is usually a content blocker, ad blocker, or restricted network blocking that domain — check Safari's Content Blockers / Extensions, or try a different network.";
+      debugLog('GAVE UP after 4 attempts: firebase SDK script never became available.');
       throw new Error(FIREBASE_INIT_ERROR);
     }
     if(firebaseConfig.apiKey.startsWith('PASTE_')){
       FIREBASE_INIT_ERROR = "This copy of the app still has placeholder Firebase config values.";
+      debugLog('firebaseConfig.apiKey is still a placeholder.');
       setSyncBadge(null, 'Cloud sync not configured');
       hideAuthGate();
       return;
     }
+    debugLog('Firebase SDK present. Calling initializeApp()...');
     if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     FIREBASE_READY = true;
     FIREBASE_INIT_ERROR = null;
+    debugLog('initializeApp() succeeded. Waiting on auth state...');
     setAuthButtonReady();
     firebase.auth().onAuthStateChanged(user=>{
       if(user){
+        debugLog('onAuthStateChanged: signed in as ' + user.email + ' (uid ' + user.uid + ')');
         CURRENT_USER = user;
         localStorage.removeItem(LS_AUTH_SKIPPED);
         hideAuthGate();
@@ -575,16 +614,20 @@ function initFirebase(attempt){
         setSyncBadge('online', user.email);
         pullFromCloudThenListen();
       } else {
+        debugLog('onAuthStateChanged: no user signed in');
         CURRENT_USER = null;
         CLOUD_REF = null;
         setSyncBadge(null, 'Local only');
         if(!authSkipped()) showAuthGate(); else hideAuthGate();
       }
+    }, err=>{
+      debugLog('onAuthStateChanged ERROR: ' + err.message);
     });
     window.addEventListener('online', ()=>{ if(CURRENT_USER) setSyncBadge('online', CURRENT_USER.email); });
     window.addEventListener('offline', ()=>{ if(CURRENT_USER) setSyncBadge('offline', 'Offline — will sync later'); });
   }catch(e){
     console.warn('Cloud sync unavailable:', e);
+    debugLog('initFirebase() caught: ' + e.message);
     setSyncBadge(null, 'Local only');
     if(!authSkipped()) hideAuthGate(); // never block the app just because the SDK hasn't loaded
     if(FIREBASE_INIT_ERROR){
@@ -596,20 +639,25 @@ function initFirebase(attempt){
 }
 
 function pullFromCloudThenListen(){
+  debugLog('Pulling initial data from cloud...');
   CLOUD_REF.get().then(snap=>{
     const remote = snap.val();
     if(remote){
+      debugLog('Cloud data found, applying it locally.');
       applyRemoteData(remote);
     } else {
+      debugLog('No cloud data yet for this account — pushing local data up.');
       syncToCloud(); // first login on this account — seed the cloud with local data
     }
     CLOUD_REF.on('value', snap2=>{
       const remote2 = snap2.val();
       if(!remote2 || SUPPRESS_SYNC) return;
+      debugLog('Received a remote update from another device.');
       applyRemoteData(remote2);
     });
   }).catch(err=>{
     console.warn('Cloud pull failed (offline?):', err);
+    debugLog('Cloud pull FAILED: ' + err.message + ' (code: ' + (err.code||'?') + ')');
     setSyncBadge('offline', 'Offline — using local data');
   });
 }
