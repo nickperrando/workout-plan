@@ -528,11 +528,24 @@ function setSyncBadge(state, text){
 function hideAuthGate(){ document.getElementById('auth-gate').style.display = 'none'; }
 function showAuthGate(){ document.getElementById('auth-gate').style.display = 'flex'; }
 
+function setAuthButtonConnecting(){
+  const btn = document.getElementById('auth-submit-btn');
+  btn.disabled = true;
+  btn.dataset.label = btn.dataset.label || btn.textContent; // remember what it should say once ready
+  btn.textContent = 'Connecting…';
+}
+function setAuthButtonReady(){
+  const btn = document.getElementById('auth-submit-btn');
+  btn.disabled = false;
+  btn.textContent = btn.dataset.label || (AUTH_MODE === 'login' ? 'Log In' : 'Sign Up');
+}
+
 function initFirebase(attempt){
   attempt = attempt || 1;
   // If the user already chose to skip sign-in, never block the app on load —
   // it'll only reappear if they explicitly tap "Sign In / Sync" from Manage.
   if(authSkipped()) hideAuthGate();
+  setAuthButtonConnecting();
   try{
     if(typeof firebase === 'undefined'){
       if(attempt <= 4){
@@ -552,6 +565,7 @@ function initFirebase(attempt){
     if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     FIREBASE_READY = true;
     FIREBASE_INIT_ERROR = null;
+    setAuthButtonReady();
     firebase.auth().onAuthStateChanged(user=>{
       if(user){
         CURRENT_USER = user;
@@ -574,6 +588,7 @@ function initFirebase(attempt){
     setSyncBadge(null, 'Local only');
     if(!authSkipped()) hideAuthGate(); // never block the app just because the SDK hasn't loaded
     if(FIREBASE_INIT_ERROR){
+      setAuthButtonReady(); // stop showing "Connecting…" — let them see the real error if they try
       const errEl = document.getElementById('auth-error');
       if(errEl) errEl.textContent = FIREBASE_INIT_ERROR;
     }
@@ -631,7 +646,10 @@ function signOutCloud(){
 /* ---- auth gate wiring ---- */
 document.getElementById('auth-toggle-link').addEventListener('click', ()=>{
   AUTH_MODE = AUTH_MODE === 'login' ? 'signup' : 'login';
-  document.getElementById('auth-submit-btn').textContent = AUTH_MODE === 'login' ? 'Log In' : 'Sign Up';
+  const btn = document.getElementById('auth-submit-btn');
+  const label = AUTH_MODE === 'login' ? 'Log In' : 'Sign Up';
+  btn.dataset.label = label;
+  if(!btn.disabled) btn.textContent = label; // don't clobber "Connecting…" if still waiting on Firebase
   document.getElementById('auth-toggle-prompt').textContent = AUTH_MODE === 'login' ? "Don't have an account?" : 'Already have an account?';
   document.getElementById('auth-toggle-link').textContent = AUTH_MODE === 'login' ? 'Sign up' : 'Log in';
   document.getElementById('auth-error').textContent = '';
