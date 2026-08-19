@@ -489,6 +489,14 @@ let ACTIVE_SESSION = loadActiveSession(); // {progKey, variantKey, startedAt, se
 
 function fullLibrary(){ return DEFAULT_LIBRARY.concat(CUSTOM_LIBRARY); }
 
+// Defensive lookup — falls back to 'main' (or the first available variant) instead of
+// throwing if a variant key ever doesn't exist on a given program (e.g. after a cloud
+// sync pulls in data from a different app version).
+function getVariant(prog, key){
+  if(!prog || !prog.variants) return { label:'Unknown', exercises:[] };
+  return prog.variants[key] || prog.variants.main || Object.values(prog.variants)[0] || { label:'Unknown', exercises:[] };
+}
+
 /* ============================= FIREBASE CLOUD SYNC ============================= */
 /*
   Fill in your Firebase config below (Firebase console > Project settings > General
@@ -794,17 +802,17 @@ function renderToday(){
     html += `<div class="prog-card" data-prog="${pk}">
       <div style="flex:1">
         <div class="name">${prog.label}</div>
-        <div class="meta">${prog.variants[isSel?SELECTED_VARIANT:'main'].exercises.length || 0} exercises · ${prog.variants.main.exercises.length ? prog.variants.main.exercises.length+' set groups' : ''}</div>
+        <div class="meta">${getVariant(prog, isSel?SELECTED_VARIANT:'main').exercises.length || 0} exercises · ${prog.variants.main.exercises.length ? prog.variants.main.exercises.length+' set groups' : ''}</div>
         ${isSel ? `<div class="variant-row">` + variantKeys.map(vk=>{
-          const empty = prog.variants[vk].exercises.length===0;
-          return `<span class="chip ${vk===SELECTED_VARIANT?'active':''}" data-variant="${vk}">${prog.variants[vk].label}${empty?' (empty)':''}</span>`;
+          const empty = getVariant(prog, vk).exercises.length===0;
+          return `<span class="chip ${vk===SELECTED_VARIANT?'active':''}" data-variant="${vk}">${getVariant(prog, vk).label}${empty?' (empty)':''}</span>`;
         }).join('') + `</div>` : ''}
       </div>
     </div>`;
   });
   html += `</div>`;
 
-  const variant = PROGRAMS[SELECTED_PROG].variants[SELECTED_VARIANT];
+  const variant = getVariant(PROGRAMS[SELECTED_PROG], SELECTED_VARIANT);
   html += `<div class="section-label">${PROGRAMS[SELECTED_PROG].label} — ${variant.label}</div>`;
   if(variant.exercises.length===0){
     html += `<div class="empty">
@@ -856,7 +864,7 @@ function findLastPerformance(name){
 }
 
 function startWorkout(){
-  const variant = PROGRAMS[SELECTED_PROG].variants[SELECTED_VARIANT];
+  const variant = getVariant(PROGRAMS[SELECTED_PROG], SELECTED_VARIANT);
   ACTIVE_SESSION = {
     progKey: SELECTED_PROG,
     variantKey: SELECTED_VARIANT,
@@ -880,7 +888,7 @@ function startWorkout(){
 function renderActiveSession(){
   const s = ACTIVE_SESSION;
   const prog = PROGRAMS[s.progKey];
-  let html = `<div class="section-label">${prog.label} — ${prog.variants[s.variantKey].label} · in progress</div>`;
+  let html = `<div class="section-label">${prog.label} — ${getVariant(prog, s.variantKey).label} · in progress</div>`;
   html += `<div class="card">`;
   s.exercises.forEach((ex, i)=>{
     html += `<div class="ex-row">
@@ -1015,7 +1023,7 @@ function finishWorkout(){
     progKey: s.progKey,
     progLabel: PROGRAMS[s.progKey].label,
     variantKey: s.variantKey,
-    variantLabel: PROGRAMS[s.progKey].variants[s.variantKey].label,
+    variantLabel: getVariant(PROGRAMS[s.progKey], s.variantKey).label,
     exercises: s.exercises.map(ex=>({
       name: ex.name, weight: ex.actualWeight, reps: ex.actualReps, rpe: ex.rpe,
       setsCompleted: ex.doneSets.filter(Boolean).length, setsPrescribed: ex.prescribedSets
