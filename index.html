@@ -9,9 +9,9 @@
 <meta name="apple-mobile-web-app-title" content="Iron Log">
 <meta name="theme-color" content="#15171B">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2315171B'/%3E%3Crect x='14' y='44' width='72' height='12' rx='3' fill='%23C9A15A'/%3E%3Crect x='8' y='34' width='10' height='32' rx='2' fill='%23C9A15A'/%3E%3Crect x='82' y='34' width='10' height='32' rx='2' fill='%23C9A15A'/%3E%3C/svg%3E">
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js" crossorigin="anonymous"></script>
 <style>
   :root{
     --bg:#15171B;
@@ -469,7 +469,7 @@ function sanitizePrograms(progs){
 function loadPrograms(){
   try{
     const raw = localStorage.getItem(LS_PROGRAMS);
-    if(raw) return sanitizePrograms(JSON.parse(raw));
+    if(raw) return sanitizePrograms(cleanForFirebase(JSON.parse(raw)));
   }catch(e){}
   return JSON.parse(JSON.stringify(DEFAULT_PROGRAMS));
 }
@@ -478,7 +478,7 @@ function savePrograms(){ localStorage.setItem(LS_PROGRAMS, JSON.stringify(PROGRA
 function loadHistory(){
   try{
     const raw = localStorage.getItem(LS_HISTORY);
-    if(raw) return JSON.parse(raw);
+    if(raw) return cleanForFirebase(JSON.parse(raw));
   }catch(e){}
   return [];
 }
@@ -708,14 +708,41 @@ function applyRemoteData(remote){
   showTab(CURRENT_TAB);
 }
 
+// Deep-cleans a value tree before sending to Firebase: NaN, Infinity, and undefined all
+// cause Firebase's .set() to throw *synchronously* (not as a promise rejection), which is
+// invisible to .catch(). Stray bad values like these are exactly what corrupted local
+// storage can accumulate over time — this makes sync unable to crash on them ever again.
+function cleanForFirebase(value){
+  if(Array.isArray(value)) return value.map(cleanForFirebase);
+  if(typeof value === 'number') return isFinite(value) ? value : null;
+  if(value && typeof value === 'object'){
+    const out = {};
+    Object.keys(value).forEach(k=>{
+      if(value[k] === undefined) return; // Firebase rejects undefined outright — just omit it
+      out[k] = cleanForFirebase(value[k]);
+    });
+    return out;
+  }
+  return value; // string, boolean, null
+}
+
 function syncToCloud(){
   if(!CURRENT_USER || !CLOUD_REF || SUPPRESS_SYNC) return;
-  CLOUD_REF.set({ programs: PROGRAMS, history: HISTORY, customLibrary: CUSTOM_LIBRARY, updatedAt: Date.now() })
-    .then(()=> setSyncBadge('online', CURRENT_USER.email))
-    .catch(err=>{
-      console.warn('Sync failed (offline?):', err);
-      setSyncBadge('offline', 'Offline — will sync later');
-    });
+  try{
+    const payload = cleanForFirebase({ programs: PROGRAMS, history: HISTORY, customLibrary: CUSTOM_LIBRARY, updatedAt: Date.now() });
+    CLOUD_REF.set(payload)
+      .then(()=> setSyncBadge('online', CURRENT_USER.email))
+      .catch(err=>{
+        console.warn('Sync failed (offline?):', err);
+        debugLog('syncToCloud() promise rejected: ' + err.message);
+        setSyncBadge('offline', 'Offline — will sync later');
+      });
+  }catch(err){
+    // .set() can throw synchronously for invalid data — catch that case too
+    console.warn('Sync threw synchronously:', err);
+    debugLog('syncToCloud() threw synchronously: ' + err.message);
+    setSyncBadge('offline', 'Sync error — see debug log');
+  }
 }
 
 function signOutCloud(){
@@ -955,6 +982,7 @@ function bindActiveSessionEvents(){
     el.addEventListener('change', ()=>{
       const exi = +el.dataset.ex, field = el.dataset.field;
       let val = el.value === '' ? null : parseFloat(el.value);
+      if(val !== null && !isFinite(val)) val = null; // guard against NaN/Infinity from odd input — these crash Firebase writes
       ACTIVE_SESSION.exercises[exi][field] = val;
       saveActiveSession();
     });
@@ -1024,7 +1052,7 @@ function openAddSessionExerciseModal(){
     const sets = parseInt(document.getElementById('m-sets').value)||3;
     const reps = parseInt(document.getElementById('m-reps').value)||10;
     const wRaw = document.getElementById('m-weight').value;
-    const weight = wRaw==='' ? null : parseFloat(wRaw);
+    let weight = wRaw==='' ? null : parseFloat(wRaw); if(weight !== null && !isFinite(weight)) weight = null;
     const pattern = document.getElementById('m-pattern').value;
     const last = findLastPerformance(name);
     ACTIVE_SESSION.exercises.push({
@@ -1078,7 +1106,10 @@ function renderHistory(){
           <div class="hist-date">${fmtDate(h.date)}</div>
           <div class="hist-prog">${h.progLabel} · ${h.variantLabel}</div>
         </div>
-        <div style="color:var(--text-faint); font-size:12px">${h.exercises.length} ex</div>
+        <div style="display:flex; align-items:center; gap:10px">
+          <div style="color:var(--text-faint); font-size:12px">${h.exercises.length} ex</div>
+          <span class="icon-x" data-delete-hist="${h.id}" style="padding:2px 6px; font-size:17px; cursor:pointer">✕</span>
+        </div>
       </div>
       <div class="hist-detail">
         ${h.exercises.map(e=>`${e.name}: ${e.setsCompleted}/${e.setsPrescribed} sets · ${e.reps ?? '—'} reps × ${fmtWeight(e.weight)}${e.rpe?' · RPE '+e.rpe:''}`).join('<br>')}
@@ -1101,7 +1132,24 @@ function renderHistory(){
   view.innerHTML = html;
 
   view.querySelectorAll('.hist-item').forEach(el=>{
-    el.addEventListener('click', ()=> el.classList.toggle('open'));
+    el.addEventListener('click', (e)=>{
+      if(e.target.closest('[data-delete-hist]')) return; // don't toggle open/close when tapping delete
+      el.classList.toggle('open');
+    });
+  });
+  view.querySelectorAll('[data-delete-hist]').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const id = el.dataset.deleteHist;
+      const entry = HISTORY.find(h=>h.id===id);
+      const label = entry ? (fmtDate(entry.date) + ' — ' + entry.progLabel) : 'this workout';
+      if(confirm('Delete ' + label + '? This can\'t be undone.')){
+        HISTORY = HISTORY.filter(h=>h.id!==id);
+        saveHistory();
+        toast('Workout deleted');
+        renderHistory();
+      }
+    });
   });
   const sel = document.getElementById('progress-select');
   if(sel){
@@ -1308,7 +1356,7 @@ function openAddExerciseModal(pk, vk){
     const sets = parseInt(document.getElementById('m-sets').value)||3;
     const reps = parseInt(document.getElementById('m-reps').value)||10;
     const wRaw = document.getElementById('m-weight').value;
-    const weight = wRaw==='' ? null : parseFloat(wRaw);
+    let weight = wRaw==='' ? null : parseFloat(wRaw); if(weight !== null && !isFinite(weight)) weight = null;
     const equip = document.getElementById('m-equip').value;
     const pattern = document.getElementById('m-pattern').value;
     PROGRAMS[pk].variants[vk].exercises.push({name, equip, pattern, sets, reps, weight});
