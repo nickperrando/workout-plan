@@ -461,7 +461,7 @@ function sanitizePrograms(progs){
       };
     });
     if(!variants.main) variants.main = { label:'Main', exercises:[] };
-    clean[pk] = { label: p.label || pk, order: typeof p.order === 'number' ? p.order : i, variants };
+    clean[pk] = { label: p.label || pk, order: typeof p.order === 'number' ? p.order : i, custom: !!p.custom || pk.startsWith('custom_'), variants };
   });
   return Object.keys(clean).length ? clean : JSON.parse(JSON.stringify(DEFAULT_PROGRAMS));
 }
@@ -837,6 +837,8 @@ let SELECTED_PROG = Object.keys(PROGRAMS).sort((a,b)=>PROGRAMS[a].order-PROGRAMS
 let SELECTED_VARIANT = 'main';
 
 function renderToday(){
+  if(!PROGRAMS[SELECTED_PROG]){ SELECTED_PROG = Object.keys(PROGRAMS).sort((a,b)=>PROGRAMS[a].order-PROGRAMS[b].order)[0]; SELECTED_VARIANT = 'main'; }
+  if(PROGRAMS[SELECTED_PROG] && !PROGRAMS[SELECTED_PROG].variants[SELECTED_VARIANT]) SELECTED_VARIANT = 'main';
   document.getElementById('header-sub').textContent = todayStr();
   const view = document.getElementById('view-today');
 
@@ -1244,12 +1246,16 @@ function renderLibrary(){
 
 function renderManage(){
   const view = document.getElementById('view-manage');
-  let html = `<div class="section-label">Edit programs</div>`;
+  let html = `<div class="section-label">Edit programs</div>
+    <button class="btn" id="create-program-btn" style="margin-bottom:16px">+ Create New Program</button>`;
 
   Object.keys(PROGRAMS).sort((a,b)=>PROGRAMS[a].order-PROGRAMS[b].order).forEach(pk=>{
     const prog = PROGRAMS[pk];
     html += `<div class="card">
-      <div class="ex-name" style="margin-bottom:8px">${prog.label}</div>`;
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+        <div class="ex-name">${escapeHtml(prog.label)}</div>
+        ${prog.custom ? `<button class="btn small danger" data-delete-prog="${pk}">Delete</button>` : ''}
+      </div>`;
     Object.keys(prog.variants).forEach(vk=>{
       const variant = prog.variants[vk];
       html += `<div style="margin-bottom:10px">
@@ -1275,7 +1281,7 @@ function renderManage(){
       }
       html += `</div>`;
     });
-    html += `</div>`;
+    html += `<button class="btn small ghost" data-add-variant="${pk}">+ Add variant</button></div>`;
   });
 
   html += `<div class="section-label">Account</div>
@@ -1305,6 +1311,20 @@ function renderManage(){
 
   view.innerHTML = html;
 
+  document.getElementById('create-program-btn').addEventListener('click', openCreateProgramModal);
+  view.querySelectorAll('[data-add-variant]').forEach(el=>{
+    el.addEventListener('click', ()=>openCreateVariantModal(el.dataset.addVariant));
+  });
+  view.querySelectorAll('[data-delete-prog]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const pk = el.dataset.deleteProg;
+      if(ACTIVE_SESSION && ACTIVE_SESSION.progKey === pk){ toast('Finish or cancel this workout first'); return; }
+      if(!confirm('Delete '+PROGRAMS[pk].label+'? Past workout history will remain.')) return;
+      delete PROGRAMS[pk];
+      if(SELECTED_PROG===pk){ SELECTED_PROG=Object.keys(PROGRAMS)[0]; SELECTED_VARIANT='main'; }
+      savePrograms(); renderManage(); toast('Program deleted');
+    });
+  });
   view.querySelectorAll('[data-add-ex]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const [pk,vk] = el.dataset.addEx.split(':');
@@ -1326,6 +1346,58 @@ function renderManage(){
   if(signoutBtn) signoutBtn.addEventListener('click', ()=>{ signOutCloud(); renderManage(); });
   const signinAgainBtn = document.getElementById('signin-again-btn');
   if(signinAgainBtn) signinAgainBtn.addEventListener('click', ()=>{ localStorage.removeItem(LS_AUTH_SKIPPED); showAuthGate(); });
+}
+
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function openCreateProgramModal(){
+  openModal(`
+    <span class="close-x" id="modal-close">✕</span>
+    <h3>Create New Program</h3>
+    <div class="field"><label>Program name</label><input id="new-program-name" maxlength="60" placeholder="e.g. Abs" autocomplete="off"></div>
+    <div style="color:var(--text-dim);font-size:12.5px;margin-top:12px">Your new program starts with an empty Main routine. Add exercises from Manage, then start it from Today.</div>
+    <button class="btn" id="new-program-save" style="margin-top:16px">Create Program</button>
+  `);
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  const input=document.getElementById('new-program-name');
+  const create=()=>{
+    const label=input.value.trim();
+    if(!label){ toast('Enter a program name'); return; }
+    if(Object.values(PROGRAMS).some(p=>p.label.toLowerCase()===label.toLowerCase())){ toast('Program name already exists'); return; }
+    const key='custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
+    const order=Math.max(0,...Object.values(PROGRAMS).map(p=>Number(p.order)||0))+1;
+    PROGRAMS[key]={label,order,custom:true,variants:{main:{label:'Main',exercises:[]}}};
+    savePrograms(); SELECTED_PROG=key; SELECTED_VARIANT='main';
+    closeModal(); renderManage(); toast('Program created');
+  };
+  document.getElementById('new-program-save').addEventListener('click',create);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter')create();});
+  input.focus();
+}
+
+function openCreateVariantModal(pk){
+  if(!PROGRAMS[pk]) return;
+  openModal(`
+    <span class="close-x" id="modal-close">✕</span>
+    <h3>Add Routine Variant</h3>
+    <div class="field"><label>Variant name</label><input id="new-variant-name" maxlength="50" placeholder="e.g. Alt 1" autocomplete="off"></div>
+    <button class="btn" id="new-variant-save" style="margin-top:16px">Add Variant</button>
+  `);
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  const input=document.getElementById('new-variant-name');
+  const create=()=>{
+    const label=input.value.trim();
+    if(!label){toast('Enter a variant name');return;}
+    if(Object.values(PROGRAMS[pk].variants).some(v=>v.label.toLowerCase()===label.toLowerCase())){toast('Variant already exists');return;}
+    const key='variant_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    PROGRAMS[pk].variants[key]={label,exercises:[]};
+    savePrograms();closeModal();renderManage();toast('Variant added');
+  };
+  document.getElementById('new-variant-save').addEventListener('click',create);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter')create();});
+  input.focus();
 }
 
 function openAddExerciseModal(pk, vk){
@@ -1407,6 +1479,8 @@ function doReset(){
   localStorage.removeItem(LS_LIBRARY);
   localStorage.removeItem(LS_SESSION);
   PROGRAMS = loadPrograms(); HISTORY = []; CUSTOM_LIBRARY = []; ACTIVE_SESSION = null;
+  SELECTED_PROG = Object.keys(PROGRAMS)[0]; SELECTED_VARIANT = 'main';
+  syncToCloud();
   toast('Reset complete');
   showTab('today');
 }
